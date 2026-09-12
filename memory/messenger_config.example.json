@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "dnd_enabled": true,
+  "reply_lang": "ru",
+  "reply_text_ru": "Привет, это Джарвис. Хозяин сейчас занят, напишет потом.",
+  "reply_text_en": "Hi, this is Jarvis. The owner is busy right now and will write later.",
+  "cooldown_seconds": 3600,
+  "whitelist": [
+    "Mom",
+    "Dad",
+    "Мама",
+    "Папа"
+  ],
+  "telegram": {
+    "enabled": false,
+    "api_id": 0,
+    "api_hash": "YOUR_API_HASH_HERE",
+    "session_name": "jarvis_tg"
+  },
+  "whatsapp": {
+    "enabled": false
+  }
+}

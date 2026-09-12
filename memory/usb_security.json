@@ -1,0 +1,9 @@
+{
+    "enabled": true,
+    "sphere_alert": true,
+    "spea_clean": true,
+    "scan_depth": 2,
+    "poll_seconds": 2.5,
+    "max_files": 400,
+    "quarantine_dir": "memory/quarantine"
+}

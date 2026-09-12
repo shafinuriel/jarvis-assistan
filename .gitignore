@@ -1,0 +1,38 @@
+# Секретные ключи и настроки
+config/api_keys.json
+memory/messenger_config.json
+config/certs/jarvis.key
+
+# Сессии Telegram (Очень важно)
+memory/jarvis_tg.session
+memory/jarvis_tg.session-journal
+
+# Личные базы памяти и история общения
+memory/long_term.json
+memory/chat_style_samples.json
+memory/study_progress.json
+knowledge_db/chroma.sqlite3
+knowledge_db/ad4478c4-612c-40ec-b160-bb5002c14bef/
+
+# Биометрия и карантин
+memory/voiceprints/
+memory/quarantine/
+memory/owner.npy
+memory/voiceprints/owner.npy
+memory/messenger_cooldown.json
+memory/*.session
+memory/*.session-journal
+
+# Кэш Python и настроки VS Code (что бы репозиторий был чистым)
+__pycache__/
+*.pyc
+.vscode/
+
+# Тестовые и временные файлы
+temp.py
+
+venv/
+.venv/
+
+jarvis_qr.png
+jarvis_qr_*.png

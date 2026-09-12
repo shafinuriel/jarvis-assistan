@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "sphere_alert": true,
+  "speak_clean": false,
+  "watch_desktop": false,
+  "settle_seconds": 1.5,
+  "log_skips": false,
+  "flag_exe": false,
+  "flag_msi": false,
+  "high_risk_ext": [".bat", ".cmd", ".vbs", ".scr", ".js", ".jse", ".wsf", ".ps1"],
+  "suspicious_name_hints": ["crack", "keygen", "patch", "loader", "payload", "worm", "stealer"]
+}

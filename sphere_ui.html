@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    html, body { margin:0; width:100%; height:100%; overflow:hidden; background: #0a1628 !important; }
+    #c { display:block; width:100%; height:100%; background: #0a1628 !important; }
+  </style>
+  <script src="three.min.js"></script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function () {
+  const COUNT = 16000;
+  const canvas = document.getElementById("c");
+
+  const renderer = new THREE.WebGLRenderer({
+    canvas: canvas,
+    alpha: true,
+    antialias: true,
+    premultipliedAlpha: false,
+  });
+  renderer.setClearColor(0x0a1628,1); // почти как старый тёмный фон, не «голубой экран»
+  document.body.style.background = "transparent";
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera.position.z = 3.1;
+
+  const positions = new Float32Array(COUNT * 3);
+  const basePositions = new Float32Array(COUNT * 3);
+  const colors = new Float32Array(COUNT * 3);
+  const phases = new Float32Array(COUNT);
+  const colA = new THREE.Color(0xff5500);
+  const colB = new THREE.Color(0xffaa00);
+
+  for (let i = 0; i < COUNT; i++) {
+    const t = i / COUNT;
+    const y = 1 - 2 * t;
+    const radiusAtY = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+    const x = Math.cos(theta) * radiusAtY;
+    const z = Math.sin(theta) * radiusAtY;
+    const r0 = 1.35;
+    basePositions[i * 3] = x * r0;
+    basePositions[i * 3 + 1] = y * r0;
+    basePositions[i * 3 + 2] = z * r0;
+    positions[i * 3] = basePositions[i * 3];
+    positions[i * 3 + 1] = basePositions[i * 3 + 1];
+    positions[i * 3 + 2] = basePositions[i * 3 + 2];
+    const c = colA.clone().lerp(colB, Math.random());
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+    phases[i] = Math.random() * Math.PI * 2;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+  const material = new THREE.PointsMaterial({
+    size: 0.028,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  });
+
+  const points = new THREE.Points(geometry, material);
+  scene.add(points);
+  
+// core (bright center)
+  const CORE_N = 1200;
+  const corePos = new Float32Array(CORE_N * 3);
+  const coreCol = new Float32Array(CORE_N * 3);
+  const coreBase = new Float32Array(CORE_N * 3);
+  const corePhase = new Float32Array(CORE_N);
+  const coreHot = new THREE.Color(0xffee88);
+  const coreMid = new THREE.Color(0xff6600);
+
+  for (let i = 0; i < CORE_N; i++) {
+    const u = Math.random();
+    const v = Math.random();
+    const theta = 2 * Math.PI * u;
+    const phi = Math.acos(2 * v - 1);
+    const rad = 0.15 + Math.random() * 0.35;
+    const x = rad * Math.sin(phi) * Math.cos(theta);
+    const y = rad * Math.sin(phi) * Math.sin(theta);
+    const z = rad * Math.cos(phi);
+    coreBase[i * 3] = x;
+    coreBase[i * 3 + 1] = y;
+    coreBase[i * 3 + 2] = z;
+    corePos[i * 3] = x;
+    corePos[i * 3 + 1] = y;
+    corePos[i * 3 + 2] = z;
+    const c = coreMid.clone().lerp(coreHot, Math.random());
+    coreCol[i * 3] = c.r;
+    coreCol[i * 3 + 1] = c.g;
+    coreCol[i * 3 + 2] = c.b;
+    corePhase[i] = Math.random() * Math.PI * 2;
+  }
+
+  const coreGeo = new THREE.BufferGeometry();
+  coreGeo.setAttribute("position", new THREE.BufferAttribute(corePos, 3));
+  coreGeo.setAttribute("color", new THREE.BufferAttribute(coreCol, 3));
+  const coreMat = new THREE.PointsMaterial({
+    size: 0.045,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  });
+  const corePoints = new THREE.Points(coreGeo, coreMat);
+  scene.add(corePoints);
+
+  function makeRing(radius, count, colorHex, size) {
+    const pos = new Float32Array(count * 3);
+    const col = new Float32Array(count * 3);
+    const c = new THREE.Color(colorHex);
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2;
+      const jitter = (Math.random() - 0.5) * 0.04;
+      pos[i * 3] = Math.cos(a) * (radius + jitter);
+      pos[i * 3 + 1] = (Math.random() - 0.5) * 0.06;
+      pos[i * 3 + 2] = Math.sin(a) * (radius + jitter);
+      col[i * 3] = c.r;
+      col[i * 3 + 1] = c.g;
+      col[i * 3 + 2] = c.b;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    const m = new THREE.PointsMaterial({
+      size: size,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    return new THREE.Points(g, m);
+  }
+
+  const ring1 = makeRing(1.55, 800, 0xff7700, 0.03);
+  const ring2 = makeRing(1.85, 1000, 0xffaa33, 0.025);
+  const ring3 = makeRing(2.15, 700, 0xff4400, 0.02);
+  // чуть наклонить
+  ring1.rotation.x = 0.4;
+  ring2.rotation.x = -0.25;
+  ring2.rotation.z = 0.3;
+  ring3.rotation.y = 0.5;
+  ring3.rotation.x = 0.15;
+  scene.add(ring1);
+  scene.add(ring2);
+  scene.add(ring3);
+
+  let state = "idle";
+  let radiusScale = 1, targetRadius = 1;
+  let rotSpeed = 0.25, targetRotSpeed = 0.25;
+  let noiseAmp = 0.04, targetNoise = 0.04;
+  let vortex = 0, targetVortex = 0;
+  let colorMix = 0;
+
+  window.setJarvisState = function (s) {
+    state = (s || "idle").toLowerCase();
+    if (state === "listening") {
+      targetRadius = 0.88; targetRotSpeed = 0.55; targetNoise = 0.06; targetVortex = 0.15; colorMix = 0.15;
+    } else if (state === "speaking") {
+      targetRadius = 1.05; targetRotSpeed = 0.4; targetNoise = 0.18; targetVortex = 0.35; colorMix = 0.85;
+    } else if (state === "thinking") {
+      targetRadius = 1.0; targetRotSpeed = 0.9; targetNoise = 0.1; targetVortex = 1.0; colorMix = 0.35;
+    } else if (state === "threat") {
+      // aggressive red alert
+      targetRadius = 1.12; targetRotSpeed = 1.4; targetNoise = 0.28; targetVortex = 0.9; colorMix = 1.0;
+    } else {
+      // idle
+      targetRadius = 1.0; targetRotSpeed = 0.22; targetNoise = 0.04; targetVortex = 0.0; colorMix = 0.0;
+    }
+  };
+
+  function smooth(a, b, t) { return a + (b - a) * t; }
+  function noise3(x, y, z, t) {
+    return Math.sin(x * 2.1 + t * 1.3) * Math.cos(y * 1.7 - t * 0.9) * Math.sin(z * 2.3 + t * 1.1) * 0.5
+      + 0.5 * Math.sin((x + y + z) * 1.4 + t * 2.0);
+  }
+
+  const clock = new THREE.Clock();
+  let last = 0;
+  const frameTime = 1 / 60;
+  const speakCol = new THREE.Color(0xff2200);
+  const threatCol = new THREE.Color(0xff0000);
+  const baseA = new THREE.Color(0xff5500);
+  const baseB = new THREE.Color(0xffaa00);
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const elapsed = clock.getElapsedTime();
+    if (elapsed - last < frameTime) return;
+    last = elapsed;
+    const t = elapsed;
+    const dt = 0.05;
+
+    radiusScale = smooth(radiusScale, targetRadius, dt);
+    rotSpeed = smooth(rotSpeed, targetRotSpeed, dt);
+    noiseAmp = smooth(noiseAmp, targetNoise, dt);
+    vortex = smooth(vortex, targetVortex, dt);
+    const breath = state === "idle"
+      ? 1 + Math.sin(t * 1.2) * 0.03
+      : (state === "threat" ? 1 + Math.sin(t * 6.0) * 0.05 : 1);
+
+    const pos = geometry.attributes.position.array;
+    const col = geometry.attributes.color.array;
+
+    for (let i = 0; i < COUNT; i++) {
+      const ix = i * 3;
+      let x = basePositions[ix], y = basePositions[ix + 1], z = basePositions[ix + 2];
+      if (vortex > 0.01) {
+        const ang = vortex * t * 1.5 + phases[i];
+        const cos = Math.cos(ang * 0.15), sin = Math.sin(ang * 0.15);
+        const nx = x * cos - z * sin, nz = x * sin + z * cos;
+        x = nx; z = nz;
+      }
+      const n = noise3(x, y, z, t + phases[i]) * noiseAmp;
+      const s = radiusScale * breath * (1 + n);
+      pos[ix] = x * s; pos[ix + 1] = y * s; pos[ix + 2] = z * s;
+      const u = phases[i] / (Math.PI * 2);
+      const alertCol = (state === "threat") ? threatCol : speakCol;
+            const c = baseA.clone().lerp(baseB, u).lerp(alertCol, colorMix);
+      col[ix] = c.r; col[ix + 1] = c.g; col[ix + 2] = c.b;
+    }
+    geometry.attributes.position.needsUpdate = true;
+    geometry.attributes.color.needsUpdate = true;
+
+    points.rotation.x = t * rotSpeed * 0.35;
+    points.rotation.y = t * rotSpeed * 0.55;
+    points.rotation.z = t * rotSpeed * 0.2;
+    // rings
+    ring1.rotation.y = t * 0.35;
+    ring2.rotation.y = -t * 0.22;
+    ring3.rotation.y = t * 0.15;
+    ring3.rotation.z = t * 0.08;
+
+    // core pulse
+    const corePulse = 1 + Math.sin(t * 3.0) * 0.08
+      + (state === "speaking" ? 0.12 : 0)
+      + (state === "threat" ? 0.18 * Math.sin(t * 8.0) : 0);
+    const cp = coreGeo.attributes.position.array;
+    for (let i = 0; i < CORE_N; i++) {
+      const ix = i * 3;
+      const s = corePulse * (1 + Math.sin(t * 2 + corePhase[i]) * 0.05);
+      cp[ix] = coreBase[ix] * s;
+      cp[ix + 1] = coreBase[ix + 1] * s;
+      cp[ix + 2] = coreBase[ix + 2] * s;
+    }
+    coreGeo.attributes.position.needsUpdate = true;
+    corePoints.rotation.y = t * 0.5;
+    renderer.render(scene, camera);
+  }
+
+  window.addEventListener("resize", function () {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  window.setJarvisState("idle");
+  animate();
+})();
+</script>
+</body>
+</html>
