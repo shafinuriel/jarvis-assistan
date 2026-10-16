@@ -75,9 +75,11 @@ from actions.remote_server import JarvisRemoteServer, generate_qr_image
 from actions.voice_id import enroll_from_numpy
 from actions.system_controller import controller
 from actions.birthday_protocol import get_birthday_target_and_url
-from actions.usb_security import UsbSecurityMonitor
+from actions.proactive_notes import NotesListener, make_speak_handler
 from actions.messenger_assistant import MessengerAssistant
-
+from modules.gods_eye.map_service import launch_tactical_map, close_tactical_map
+from actions.window_control import list_windows, focus_window, click_center, type_text
+from actions.offline_brain import ask as offline_ask, is_available as offline_available
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -88,7 +90,7 @@ def get_base_dir():
 BASE_DIR        = get_base_dir()
 API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
-LIVE_MODEL          = "models/gemini-2.5-flash-native-audio-preview-12-2025"
+LIVE_MODEL          = "gemini-3.8-live"
 CHANNELS            = 1
 SEND_SAMPLE_RATE    = 16000
 RECEIVE_SAMPLE_RATE = 24000
@@ -115,6 +117,26 @@ def _clean_transcript(text: str) -> str:
     text = _CTRL_RE.sub("", text)
     text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", text)
     return text.strip()
+
+def has_internet(retries: int = 3, timeout: float = 2.0) -> bool:
+    """True только если сеть реально есть. Иначе offline-brain."""
+    import socket
+    import urllib.request
+
+    for _ in range(retries):
+        for host, port in (("1.1.1.1", 53), ("8.8.8.8", 53)):
+            try:
+                s = socket.create_connection((host, port), timeout=timeout)
+                s.close()
+                return True
+            except OSError:
+                pass
+        try:
+            urllib.request.urlopen("https://www.google.com", timeout=timeout)
+            return True
+        except Exception:
+            pass
+    return False
 
 TOOL_DECLARATIONS = [
     {
@@ -154,6 +176,75 @@ TOOL_DECLARATIONS = [
                 },
             },
             "required": []
+        },
+    },
+    {
+        "name": "install_steam_game",
+        "description": (
+            "Download/install a Steam game by name or AppID. "
+            "Use when user says: скачай, установи, download, install a game on Steam. "
+            "Examples: CS2, Poppy Playtime, War Thunder, Terraria."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "game": {
+                    "type": "STRING",
+                    "description": "Game name or Steam AppID (e.g. cs2, poppy, 730)",
+                },
+            },
+            "required": ["game"],
+        },
+    },
+    {
+        "name": "uninstall_steam_game",
+        "description": (
+            "Uninstall a Steam game by name or AppID. "
+            "Use only when user clearly asks to delete/remove/uninstall a Steam game."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "game": {
+                    "type": "STRING",
+                    "description": "Game name or Steam AppID",
+                },
+            },
+            "required": ["game"],
+        },
+    },
+    {
+        "name": "spotify_media",
+        "description": (
+            "Control Spotify / system media: play, pause, next track, previous track. "
+            "Use when user says play, pause, next song, previous song, skip."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "description": "play_pause | next | previous",
+                },
+            },
+            "required": ["action"],
+        },
+    },
+    {
+        "name": "offline_ask",
+        "description": (
+            "Local offline brain (math + Gemma). "
+            "ONLY when there is NO internet. Never use if online."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "question": {
+                    "type": "STRING",
+                    "description": "User question",
+                },
+            },
+            "required": ["question"],
         },
     },
     {
@@ -833,9 +924,101 @@ TOOL_DECLARATIONS = [
                 }
             }
         }
-    
-            
-    }
+    },
+    {
+        "name": "open_tactical_map",
+        "description": (
+            "Open God's Eye View 3D tactical globe in the browser on this PC. "
+            "You can pass either a city name (e.g. Baku, Paris, London, Moscow) "
+            "or exact coordinates (lat, lon). Zoom is optional."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "City name (e.g. Baku, Paris, London, Moscow, Istanbul, Tokyo, Dubai)"
+                },
+                "lat": {
+                    "type": "number",
+                    "description": "Latitude"
+                },
+                "lon": {
+                    "type": "number",
+                    "description": "Longitude"
+                },
+                "zoom": {
+                    "type": "number",
+                    "description": "Zoom level (default 10)"
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "close_tactical_map",
+        "description": "Close God's Eye View map server and free resources.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "list_windows",
+        "description": "List currently visible windows on the PC. Use when user asks what is open or which windows exist.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "focus_window",
+        "description": "Bring a window to the foreground by part of its title. Example: focus Chrome, focus Discord, focus Steam.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title_part": {
+                    "type": "string",
+                    "description": "Part of the window title to find (case-insensitive)"
+                }
+            },
+            "required": ["title_part"]
+        }
+    },
+    {
+        "name": "type_into_window",
+        "description": "Focus a window and type text into it as if from keyboard.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title_part": {
+                    "type": "string",
+                    "description": "Part of the window title"
+                },
+                "text": {
+                    "type": "string",
+                    "description": "Text to type"
+                }
+            },
+            "required": ["title_part", "text"]
+        }
+    },
+    {
+        "name": "click_window",
+        "description": "Focus a window and click its center. Use to activate buttons or bring focus inside an app.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title_part": {
+                    "type": "string",
+                    "description": "Part of the window title"
+                }
+            },
+            "required": ["title_part"]
+        }
+    },
 ]
 
 # --- Plugin system ---
@@ -867,6 +1050,8 @@ class JarvisLive:
         self._briefing_sent    = False          # morning briefing fires once per process
         self._sys_monitor      = SystemMonitor()  # persistent cooldown state
         self._proactive        = ProactiveEngine()
+        self._notes_listener = None
+        self.messenger = MessengerAssistant(jarvis=self)
         self._last_user_speech = time.monotonic()  # updated on every user utterance
         self._session_log: list[str] = []          # conversation turns for end-of-session summary
         self.conversation_history = []
@@ -875,10 +1060,10 @@ class JarvisLive:
         self._voice_buf_max_sec = 2.0
         self._voice_allowed = True
         self._voice_last_check = 0.0
-        self._messenger = None
-        self._usb_sec = None
         # === Remote Server (Экосистема) ===
         self.remote_server = JarvisRemoteServer(on_message=self._on_remote_message)
+        self._note_queue = []
+        self._briefing_done = False
             
     def _add_to_history(self, role: str, text: str):
         """Сохраняем реплики и ограничиваем размер буфера."""
@@ -895,67 +1080,29 @@ class JarvisLive:
     
     def _on_text_command(self, text: str):
         t = (text or "").strip().lower()
-        _loop = getattr(self, "_loop", None) or getattr(self, "loop", None)
-
-        if getattr(self, "_usb_sec", None) is not None and _loop is not None:
+        
+        # --- USB security: quarantine / ignore while pending ---
+        if getattr(self, "_usb_sec", None) is not None and getattr(self, "loop", None):
             try:
                 fut = asyncio.run_coroutine_threadsafe(
                     self._usb_sec.handle_voice_command(text or ""),
-                    _loop,
+                    self.loop,
                 )
                 if fut.result(timeout=8):
                     return
             except Exception as e:
                 print(f"[USB-SEC] text cmd: {e}")
-
-        if getattr(self, "_dl_guard", None) is not None and _loop is not None:
+        
+        if getattr(self, "_dl_guard", None) is not None and getattr(self, "loop", None):
             try:
                 fut = asyncio.run_coroutine_threadsafe(
                     self._dl_guard.handle_voice_command(text or ""),
-                    _loop,
+                    self.loop,
                 )
                 if fut.result(timeout=8):
                     return
             except Exception as e:
                 print(f"[DL-GUARD] text cmd: {e}")
-                
-        # --- Messenger draft / DND ---
-        if getattr(self, "_messenger", None) is not None and _loop is not None:
-            m = self._messenger
-            if any(x in t for x in (
-                "отправь черновик", "отправь", "да отправь", "send draft", "confirm draft"
-            )):
-                try:
-                    asyncio.run_coroutine_threadsafe(m.confirm_draft(), _loop)
-                except Exception as e:
-                    print(f"[MSG] confirm: {e}")
-                return
-            if any(x in t for x in (
-                "отмена черновик", "не отправляй", "cancel draft"
-            )):
-                try:
-                    asyncio.run_coroutine_threadsafe(m.cancel_draft(), _loop)
-                except Exception as e:
-                    print(f"[MSG] cancel: {e}")
-                return
-            if any(x in t for x in ("не беспокоить", "dnd on", "режим не беспокоить")):
-                m.cfg["dnd_enabled"] = True
-                print("[MSG] DND ON")
-                try:
-                    self.ui.write_log("SYS: DND ON")
-                except Exception:
-                    pass
-                return
-            if any(x in t for x in (
-                "выключи не беспокоить", "dnd off", "обычный режим сообщений"
-            )):
-                m.cfg["dnd_enabled"] = False
-                print("[MSG] DND OFF")
-                try:
-                    self.ui.write_log("SYS: DND OFF")
-                except Exception:
-                    pass
-                return
 
         # --- Voice enroll / mode (local, no Gemini) ---
         if any(x in t for x in ("запомни мой голос", "запомни голос", "enroll voice", "remember my voice")):
@@ -987,6 +1134,20 @@ class JarvisLive:
             return
         # --- end voice local commands ---
 
+        # --- OFFLINE FALLBACK (только без интернета) ---
+        if not has_internet(retries=3):
+            user_q = (text or "").strip()
+            if user_q and getattr(self, "_loop", None):
+                async def _offline_reply():
+                    reply = await offline_ask(user_q)
+                    self.ui.write_log(f"OFFLINE: {reply}")
+                    try:
+                        self.ui.write_log(f"{getattr(self, '_asst_name', 'JARVIS')}: {reply}")
+                    except Exception:
+                        pass
+                asyncio.run_coroutine_threadsafe(_offline_reply(), self._loop)
+            return
+        
         if not self._loop or not self.session:
             return
         
@@ -1003,14 +1164,22 @@ class JarvisLive:
         #2. Сохраняем твой новый запрос в историю
         self._add_to_history("user", text)
         
-        #3. Отправляем итоговый текст (вместе с истори) в API
-        asyncio.run_coroutine_threadsafe(
-            self.session.send_client_content(
-                turns={"parts": [{"text": payload_text}]},
-                turn_complete=True
-            ),
-            self._loop
-        )
+        #3. Отправляем итоговый текст (вместе с историей) в API
+        async def _send_text():
+            if not self.session:
+                return
+            try:
+                await self.session.send_client_content(
+                    turns=[{
+                        "role": "user",
+                        "parts": [{"text": payload_text}]
+                    }],
+                    turn_complete=True,
+                )
+            except Exception as e:
+                print(f"[JARVIS] text send failed: {e}")
+
+        asyncio.run_coroutine_threadsafe(_send_text(), self._loop)
 
     def set_speaking(self, value: bool):
         with self._speaking_lock:
@@ -1104,11 +1273,8 @@ class JarvisLive:
 
         return types.LiveConnectConfig(
             response_modalities=["AUDIO"],
-            output_audio_transcription={},
-            input_audio_transcription={},
             system_instruction="\n".join(parts),
             tools=[{"function_declarations": TOOL_DECLARATIONS}],
-            session_resumption=types.SessionResumptionConfig(),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -1209,14 +1375,14 @@ class JarvisLive:
             from PyQt6.QtCore import Qt
             import os
 
-            # Полный путь к файлу
-            qr_path = getattr(self, "_qr_path", None)
-            if not qr_path or not os.path.exists(qr_path):
-                print(f"[Remote] Файл QR не найден: {qr_path}")
-                return
-        
+            # Актуальный QR: IP + token на момент нажатия
+            qr_data = self.remote_server.get_qr_data()
+            qr_path = os.path.join(str(BASE_DIR), "jarvis_qr.png")
+            generate_qr_image(qr_data, qr_path)
+            self._qr_path = qr_path
+
             if not os.path.exists(qr_path):
-                print(f"[Remote] Файл QR не найден: {qr_path}")
+                print(f"[Remote] файл QR не найден: {qr_path}")
                 return
 
             dialog = QDialog()
@@ -1224,44 +1390,39 @@ class JarvisLive:
             dialog.setFixedSize(380, 440)
 
             layout = QVBoxLayout(dialog)
-
             title = QLabel("Отсканируй QR-код с телефона")
             title.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(title)
 
             qr_label = QLabel()
             pixmap = QPixmap(qr_path)
-        
             if pixmap.isNull():
                 print(f"[Remote] Не удалось загрузить изображение: {qr_path}")
                 qr_label.setText("Ошибка загрузки QR")
             else:
                 qr_label.setPixmap(
-                    pixmap.scaled(300, 300, 
-                                Qt.AspectRatioMode.KeepAspectRatio, 
-                                Qt.TransformationMode.SmoothTransformation)
+                    pixmap.scaled(
+                        300, 300,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
                 )
-        
             qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(qr_label)
 
             info = QLabel(
                 f"IP: {self.remote_server.local_ip}:{self.remote_server.port}\n"
                 f"Token: {self.remote_server.token}"
-                )
+            )
             info.setAlignment(Qt.AlignmentFlag.AlignCenter)
             info.setWordWrap(True)
             layout.addWidget(info)
 
-            # Важно: не блокируем основной поток навсегда
             dialog.setModal(True)
             dialog.show()
             dialog.raise_()
             dialog.activateWindow()
-
-            # Сохраняем ссылку, чтобы окно не уничтожилось
             self._qr_dialog = dialog
-
         except Exception as e:
             print(f"[Remote] Ошибка показа QR: {e}")
     
@@ -1343,6 +1504,35 @@ class JarvisLive:
                 )
                 result = ";".join(f"{r.target}: {r.status}" for r in results)
 
+            elif name == "install_steam_game":
+                game = (args.get("game") or "").strip()
+                if not game:
+                    result = "No game name provided."
+                else:
+                    lr = await controller.install_steam_game(game)
+                    result = lr.message
+
+            elif name == "uninstall_steam_game":
+                game = (args.get("game") or "").strip()
+                if not game:
+                    result = "No game name provided."
+                else:
+                    lr = await controller.uninstall_steam_game(game)
+                    result = lr.message
+            
+            elif name == "spotify_media":
+                action = (args.get("action") or "play_pause").strip()
+                lr = await controller.spotify_media(action)
+                result = lr.message
+            
+            elif name == "offline_ask":
+                # Жёстко: при наличии сети offline не используем
+                if has_internet(retries=2):
+                    result = "Online available — use normal Gemini path, not offline."
+                else:
+                    q = (args.get("question") or "").strip()
+                    result = await offline_ask(q) if q else "Empty question."
+            
             elif name == "send_phone_message":
                 text = args.get("text", "")
                 device_id = args.get("device_id", "phone_1")
@@ -1644,6 +1834,53 @@ class JarvisLive:
                 else:
                     result = "Specify action (add/remove/list) and a topic."
 
+            elif name == "open_tactical_map":
+                lat = args.get("lat")
+                lon = args.get("lon")
+                zoom = args.get("zoom")
+                city = args.get("city")
+
+                try:
+                    lat_f = float(lat) if lat is not None and str(lat).strip() != "" else None
+                except (TypeError, ValueError):
+                    lat_f = None
+                try:
+                    lon_f = float(lon) if lon is not None and str(lon).strip() != "" else None
+                except (TypeError, ValueError):
+                    lon_f = None
+                try:
+                    zoom_f = float(zoom) if zoom is not None and str(zoom).strip() != "" else None
+                except (TypeError, ValueError):
+                    zoom_f = None
+
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: launch_tactical_map(lat=lat_f, lon=lon_f, zoom=zoom_f, city=city),
+                )
+            
+            elif name == "close_tactical_map":
+                result = await loop.run_in_executor(None, close_tactical_map)
+            
+            elif name == "list_windows":
+                wins = list_windows()
+                if not wins:
+                    return "No visible windows found."
+                lines = [f"- {w['title']}" for w in wins]
+                return "Open windows:\n" + "\n".join(lines)
+
+            elif name == "focus_window":
+                title_part = args.get("title_part", "")
+                return focus_window(title_part)
+
+            elif name == "type_into_window":
+                title_part = args.get("title_part", "")
+                text = args.get("text", "")
+                return type_text(title_part, text)
+            
+            elif name == "click_window":
+                title_part = args.get("title_part", "")
+                return click_center(title_part)
+            
             elif name == "shutdown_jarvis":
                 self.ui.write_log("SYS: Shutdown requested.")
                 async def _do_shutdown():
@@ -1656,13 +1893,22 @@ class JarvisLive:
                             )
                         except Exception:
                             pass
-                    await asyncio.sleep(1.5)
-                    import os as _os
-                    if getattr(self, "_messenger", None):
                         try:
-                            self._messenger.stop()
+                            if getattr(self, "messenger", None):
+                                self.messenger.stop()
                         except Exception:
                             pass
+                    await asyncio.sleep(1.5)
+                    if getattr(self, "_notes_listener", None) is not None:
+                        try:
+                            self._notes_listener.stop()
+                        except Exception:
+                            pass
+                    try:
+                        close_tactical_map()
+                    except Exception:
+                        pass
+                    import os as _os
                     _os._exit(0)
                 asyncio.create_task(_do_shutdown())
 
@@ -1683,6 +1929,126 @@ class JarvisLive:
             response={"result": result}
         )
 
+    def _start_notes_listener(self) -> None:
+        """Firebase notes → log + voice. Watchdog reconnects if stream dies."""
+        self._start_notes_listener_once()
+
+        if not getattr(self, "_notes_watchdog_started", False):
+            self._notes_watchdog_started = True
+            loop = getattr(self, "_loop", None)
+            if loop is None:
+                try:
+                    loop = asyncio.get_event_loop()
+                except Exception:
+                    loop = None
+            if loop is not None:
+                loop.create_task(self._notes_reconnect_loop())
+
+    def _start_notes_listener_once(self) -> None:
+        """(Re)start listener. Safe to call after stop."""
+        old = getattr(self, "_notes_listener", None)
+        if old is not None:
+            try:
+                old.stop()
+            except Exception:
+                pass
+            self._notes_listener = None
+
+        def speak(msg: str) -> None:
+            try:
+                if hasattr(self, "ui") and self.ui is not None:
+                    self.ui.write_log(f"SYS: {msg}")
+            except Exception as e:
+                print(f"[Notes] speak log failed: {e}")
+
+            if not getattr(self, "_briefing_done", False):
+                self._note_queue.append(msg)
+                print(f"[Notes] queued until briefing done ({len(self._note_queue)})")
+                return
+
+            self._schedule_note_voice(msg)
+
+        try:
+            self._notes_listener = NotesListener(
+                on_note=make_speak_handler(speak)
+            )
+            self._notes_listener.start()
+            print("[JARVIS] NotesListener started")
+        except Exception as e:
+            print(f"[JARVIS] NotesListener failed: {e}")
+            self._notes_listener = None
+
+    async def _notes_reconnect_loop(self) -> None:
+        """Zero-overhead: check every 30s, reconnect only if dead."""
+        backoff = 10
+        while True:
+            try:
+                await asyncio.sleep(30)
+                lis = getattr(self, "_notes_listener", None)
+                alive = False
+                if lis is not None:
+                    try:
+                        alive = lis.is_alive()
+                    except Exception:
+                        alive = False
+                if alive:
+                    backoff = 10
+                    continue
+
+                print(f"[JARVIS] NotesListener dead — retry in {backoff}s")
+                await asyncio.sleep(backoff)
+                self._start_notes_listener_once()
+                if getattr(self, "_notes_listener", None) is not None:
+                    backoff = 10
+                    print("[JARVIS] NotesListener reconnected")
+                else:
+                    backoff = min(backoff * 2, 120)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"[JARVIS] notes reconnect: {e}")
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 120)
+
+    async def _announce_note(self, msg: str) -> None:
+        try:
+            if getattr(self, "session", None) is not None:
+                await self.session.send_client_content(
+                    turns=[{"parts": [{
+                        "text": (
+                            "Briefly say this to the user in Russian. "
+                            "Do not ask questions, just announce: "
+                            + msg
+                        )
+                    }]}],
+                    turn_complete=True,
+                )
+        except Exception as e:
+            print(f"[Notes] session announce failed: {e}")
+    
+    def _schedule_note_voice(self, msg: str) -> None:
+        try:
+            loop = getattr(self, "_loop", None) or getattr(self, "loop", None)
+            if loop is None:
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+            if loop is not None and loop.is_running():
+                asyncio.run_coroutine_threadsafe(self._announce_note(msg), loop)
+            else:
+                print(f"[Notes] no loop for voice: {msg}")
+        except Exception as e:
+            print(f"[Notes] voice failed: {e}")
+
+    async def _flush_note_queue(self) -> None:
+        self._briefing_done = True
+        q = list(getattr(self, "_note_queue", []))
+        self._note_queue = []
+        for msg in q:
+            await self._announce_note(msg)
+            await asyncio.sleep(0.8)
+    
     async def run_birthday_protocol(self):
         from actions.birthday_protocol import get_birthday_target_and_url
         # если у тебя build_tv_youtube_command — см. ниже
@@ -1705,22 +2071,11 @@ class JarvisLive:
     
     async def _run_usb_security(self):
         try:
+            from actions.usb_security import UsbSecurityMonitor
             self._usb_sec = UsbSecurityMonitor(self)
             await self._usb_sec.run_loop()
         except Exception as e:
             print(f"[USB-SEC] stopped: {e}")
-            
-    def _start_messenger(self):
-        try:
-            from actions.messenger_assistant import MessengerAssistant
-            self._messenger = MessengerAssistant(jarvis=self)
-            ok = self._messenger.start()
-            if not ok:
-                print("[MSG] not started (disabled in config?)")
-        except Exception as e:
-            print(f"[MSG] start failed: {e}")
-            import traceback
-            traceback.print_exc()
             
     async def _run_download_guard(self):
         try:
@@ -1733,7 +2088,12 @@ class JarvisLive:
     async def _send_realtime(self):
         while True:
             msg = await self.out_queue.get()
-            await self.session.send_realtime_input(media=msg)
+            try:
+                if self.session is None:
+                    continue
+                await self.session.send_realtime_input(audio=msg)
+            except Exception as e:
+                print(f"[JARVIS] send_realtime error: {e}")
 
     async def _listen_audio(self):
         print("[JARVIS] 🎤 Mic started")
@@ -1742,26 +2102,26 @@ class JarvisLive:
         
         
         # === Запуск Remote Server (один раз) ===
-        if not getattr(self, "_remote_started", False):
-            self._remote_started = True
+        #if not getattr(self, "_remote_started", False):
+            #self._remote_started = True
 
-        async def _start_remote():
-            try:
-                await self.remote_server.start()
-                print("[Remote] Сервер успешно запущен!")
-            except Exception as e:
-                print(f"[Remote] ОШИБКА запуска сервера: {e}")
+        #async def _start_remote():
+            #try:
+                #await self.remote_server.start()
+                #print("[Remote] Сервер успешно запущен!")
+            #except Exception as e:
+                #print(f"[Remote] ОШИБКА запуска сервера: {e}")
 
-        asyncio.create_task(_start_remote())
+        #asyncio.create_task(_start_remote())
 
-        import os
-        qr_data = self.remote_server.get_qr_data()
-        qr_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis_qr.png")
-        generate_qr_image(qr_data, qr_path)
-        self._qr_path = qr_path
+        #import os
+        #qr_data = self.remote_server.get_qr_data()
+        #qr_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis_qr.png")
+        #generate_qr_image(qr_data, qr_path)
+        #self._qr_path = qr_path
 
-        print(f"[Remote] QR-код сохранён: {qr_path}")
-        print(f"[Remote] Подключение: {qr_data}")
+        #print(f"[Remote] QR-код сохранён: {qr_path}")
+        #print(f"[Remote] Подключение: {qr_data}")
 
         def callback(indata, frames, time_info, status):
             allow = True
@@ -1806,7 +2166,7 @@ class JarvisLive:
                 data = indata.tobytes()
                 loop.call_soon_threadsafe(
                     self.out_queue.put_nowait,
-                    {"data": data, "mime_type": "audio/pcm"},
+                    {"data": data, "mime_type": "audio/pcm;rate=16000"}
                 )
         try:
             with sd.InputStream(
@@ -1881,6 +2241,45 @@ class JarvisLive:
                                         "text": full_in,
                                         "ts": datetime.now().isoformat(),
                                     }))
+                                    
+                                # --- Messenger: DND / draft ---
+                                low = full_in.lower()
+                                msg = getattr(self, "messenger", None)
+                                if msg is not None:
+                                    if any(x in low for x in (
+                                        "включи не беспокоить", "dnd on", "режим не беспокоить"
+                                    )):
+                                        msg.cfg["dnd_enabled"] = True
+                                        msg.cfg["enabled"] = True
+                                        from actions.messenger_assistant import CONFIG_PATH, _save_json
+                                        _save_json(CONFIG_PATH, msg.cfg)
+                                        self.speak("Режим не беспокоить включён.")
+                                        in_buf = []
+                                        continue
+
+                                    if any(x in low for x in (
+                                        "выключи не беспокоить", "dnd off", "обычный режим сообщений"
+                                    )):
+                                        msg.cfg["dnd_enabled"] = False
+                                        from actions.messenger_assistant import CONFIG_PATH, _save_json
+                                        _save_json(CONFIG_PATH, msg.cfg)
+                                        self.speak("Обычный режим сообщений.")
+                                        in_buf = []
+                                        continue
+
+                                    if any(x in low for x in (
+                                        "отправь черновик", "подтверди черновик", "да отправь"
+                                    )):
+                                        asyncio.create_task(msg.confirm_draft())
+                                        in_buf = []
+                                        continue
+
+                                    if any(x in low for x in (
+                                        "отмени черновик", "отмена черновика"
+                                    )):
+                                        asyncio.create_task(msg.cancel_draft())
+                                        in_buf = []
+                                        continue
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()
@@ -2059,10 +2458,18 @@ class JarvisLive:
         if self._turn_done_event:
             self._turn_done_event.clear()
 
-        await self.session.send_client_content(
-            turns={"parts": [{"text": p1}]},
-            turn_complete=True,
-        )
+        try:
+            await self.session.send_client_content(
+                turns=[{
+                    "role": "user",
+                    "parts": [{"text": p1}]
+                }],
+                turn_complete=True,
+            )
+        except Exception as e:
+            print(f"[Briefing] Phase 1 error: {e}")
+            self.ui.write_log(f"SYS: Briefing phase 1 failed: {e}")
+            return
         self.ui.write_log("SYS: Briefing phase 1 (greeting) sent.")
 
         # ── Phase 2: fire as soon as Phase 1 audio is done ───────────────────
@@ -2096,6 +2503,7 @@ class JarvisLive:
                     news_text = ""
 
                 if not self.session:
+                    await self._flush_note_queue()
                     return
 
                 if news_text and len(news_text) > 60:
@@ -2114,13 +2522,19 @@ class JarvisLive:
                     )
 
                 await self.session.send_client_content(
-                    turns={"parts": [{"text": p2}]},
+                    turns=[{
+                    "role": "user",
+                    "parts": [{"text": p2}]
+                    }],
                     turn_complete=True,
                 )
                 self.ui.write_log("SYS: Briefing phase 2 (news) sent.")
             except Exception as e:
                 print(f"[Briefing] Phase 2 error: {e}")
                 self.ui.write_log(f"SYS: Briefing phase 2 failed: {e}")
+                
+            await asyncio.sleep(2.0)
+            await self._flush_note_queue()
 
         asyncio.create_task(_deliver_news())
 
@@ -2231,6 +2645,11 @@ class JarvisLive:
                 speaking = self._is_speaking
             if speaking:
                 continue
+            
+            if not getattr(self, "_briefing_done", True):
+                continue
+            if getattr(self, "_note_queue", None):
+                continue
 
             if not self._proactive.should_trigger(self._last_user_speech):
                 continue
@@ -2312,7 +2731,15 @@ class JarvisLive:
 
     async def run(self):
         self._loop = asyncio.get_event_loop()
-        self.loop = asyncio.get_event_loop()
+        
+        self._start_notes_listener()
+        
+        # Messenger (Telegram DND / drafts)- один раз на процесс
+        try:
+            if getattr(self, "messenger", None) and self.messenger.start():
+                print("[JARVIS] MessengerAssistant started")
+        except Exception as e:
+            print(f"[JARVIS] Messenger start: {e}")
 
         # Start dashboard (optional — needs: pip install fastapi "uvicorn[standard]" cryptography)
         try:
@@ -2371,15 +2798,20 @@ class JarvisLive:
                     tg.create_task(self._run_proactive_mode())
                     tg.create_task(self._run_usb_security())
                     tg.create_task(self._run_download_guard())
-                    
-                    self._start_messenger()
                     if self._dashboard:
                         tg.create_task(self._relay_phone_audio())
 
                     # Morning briefing — fires once per process launch (if enabled)
                     if not self._briefing_sent and get_brief_enabled():
                         self._briefing_sent = True
-                        tg.create_task(self._send_startup_briefing())
+                        async def _delayed_briefing():
+                            await asyncio.sleep(4.0)  # дать сессии стабилизироваться
+                            if self.session:
+                                await self._send_startup_briefing()
+                        tg.create_task(_delayed_briefing())
+                    else:
+                        #брифинг выключен или уже был сразу заметки
+                        self._briefing_done = True
 
             except KeyboardInterrupt:
                 raise

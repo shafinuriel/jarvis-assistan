@@ -2,21 +2,6 @@
 import json
 import sys
 from pathlib import Path
-import time 
-
-_GEMINI_NEWS_COOLDOWN_UNTIL = 0.0 #unix time; skip gemini news until then
-_GEMINI_NEWS_COOLDOWN_SEC = 15 * 60 # 15 minutes after 429
-
-
-def _is_rate_limit(err: Exception) -> bool:
-    msg = str(err).lower()
-    return "429" in msg or "quota" in msg or "resource_exhausted" in msg
-
-def _short_err(err: Exception) -> str:
-    if _is_rate_limit(err):
-        return "429 quota / rate limit"
-    s = str(err).replace("\n", " ")
-    return s[:120] + ("..." if len(s) > 120 else "")
 
 def _get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -172,7 +157,7 @@ def _search(query: str) -> str:
     try:
         return _gemini_search(query)
     except Exception as e:
-        print(f"[WebSearch] ⚠️ Gemini failed ({_short_err(e)}) — trying DDG...")
+        print(f"[WebSearch] ⚠️ Gemini failed ({e}) — trying DDG...")
         results = _ddg_search(query)
         return _format_ddg(query, results)
 
@@ -205,23 +190,10 @@ def _news(query: str) -> str:
                     done_evt.set()
 
     def _try_gemini():
-        global _GEMINI_NEWS_COOLDOWN_UNTIL
-        now = time.time()
-        if now < _GEMINI_NEWS_COOLDOWN_UNTIL:
-            print("[WebSearch] Gemini news skipped (cooldwon after 429)")
-            _store("")
-            return
         try:
             _store(_gemini_search(gemini_query))
         except Exception as e:
-            if _is_rate_limit(e):
-                _GEMINI_NEWS_COOLDOWN_UNTIL = now + _GEMINI_NEWS_COOLDOWN_SEC
-                print(
-                    f"[WebSearch] ⚠ Gemini news 429 — "
-                    f"cooldown {_GEMINI_NEWS_COOLDOWN_SEC // 60} min, using DDG"
-                )
-            else:
-                print(f"[WebSearch] ⚠ Gemini news failed ({_short_err(e)})")
+            print(f"[WebSearch] ⚠️ Gemini news failed ({e})")
             _store("")
 
     def _try_ddg():

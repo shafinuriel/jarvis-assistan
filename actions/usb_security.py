@@ -327,8 +327,49 @@ class UsbSecurityMonitor:
                 self.jarvis.ui.set_state("IDLE")
             except Exception:
                 pass
-            
-    async def handle_voice_command(self, text: str) -> bool:
+
+# helpers for Jarvis voice commands later
+def do_quarantine(path: str, cfg: Optional[dict] = None) -> str:
+    cfg = cfg or _load_config()
+    return quarantine_file(path, cfg.get("quarantine_dir", "memory/quarantine"))
+
+
+def do_delete(path: str) -> bool:
+    try:
+        Path(path).unlink()
+        return True
+    except Exception:
+        return False
+    
+def get_volume_label(root: str) -> str:
+    """Windows volume label, fallback to drive letter."""
+    letter = root.rstrip("\\/")
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.windll.kernel32
+        volume_name = ctypes.create_unicode_buffer(1024)
+        fs_name = ctypes.create_unicode_buffer(1024)
+        serial = wintypes.DWORD()
+        max_comp = wintypes.DWORD()
+        flags = wintypes.DWORD()
+        ok = kernel32.GetVolumeInformationW(
+            letter + "\\",
+            volume_name,
+            ctypes.sizeof(volume_name),
+            ctypes.byref(serial),
+            ctypes.byref(max_comp),
+            ctypes.byref(flags),
+            fs_name,
+            ctypes.sizeof(fs_name),
+        )
+        if ok and volume_name.value:
+            return volume_name.value
+    except Exception:
+        pass
+    return letter
+
+async def handle_voice_command(self, text: str) -> bool:
         """Return True if command was handled (skip LLM)."""
         if not self.pending_decision:
             return False
@@ -373,45 +414,3 @@ class UsbSecurityMonitor:
                 pass
             return True
         return False
-
-# helpers for Jarvis voice commands later
-def do_quarantine(path: str, cfg: Optional[dict] = None) -> str:
-    cfg = cfg or _load_config()
-    return quarantine_file(path, cfg.get("quarantine_dir", "memory/quarantine"))
-
-
-def do_delete(path: str) -> bool:
-    try:
-        Path(path).unlink()
-        return True
-    except Exception:
-        return False
-    
-def get_volume_label(root: str) -> str:
-    """Windows volume label, fallback to drive letter."""
-    letter = root.rstrip("\\/")
-    try:
-        import ctypes
-        from ctypes import wintypes
-        kernel32 = ctypes.windll.kernel32
-        volume_name = ctypes.create_unicode_buffer(1024)
-        fs_name = ctypes.create_unicode_buffer(1024)
-        serial = wintypes.DWORD()
-        max_comp = wintypes.DWORD()
-        flags = wintypes.DWORD()
-        ok = kernel32.GetVolumeInformationW(
-            letter + "\\",
-            volume_name,
-            ctypes.sizeof(volume_name),
-            ctypes.byref(serial),
-            ctypes.byref(max_comp),
-            ctypes.byref(flags),
-            fs_name,
-            ctypes.sizeof(fs_name),
-        )
-        if ok and volume_name.value:
-            return volume_name.value
-    except Exception:
-        pass
-    return letter
-

@@ -36,3 +36,28 @@ venv/
 
 jarvis_qr.png
 jarvis_qr_*.png
+
+config/firebase_service_account.json
+firebase_service_account.json
+# Firebase / notes
+config/firebase_url.txt
+memory/owner_face.jpg
+
+# God's Eye View (vendor + local only)
+modules/gods_eye/gods-eye-view/
+modules/gods_eye/gods_eye_npm.log
+modules/gods_eye/**/node_modules/
+modules/gods_eye/**/.env
+modules/gods_eye/**/.env.*
+
+# certs (ключ уже есть — сертификат тоже не светим)
+config/certs/
+memory/config.json
+
+# тяжёлые бинарники (не для GitHub)
+platform-tools/
+
+# лишние артефакты
+*.npy
+.DS_Store
+Thumbs.db

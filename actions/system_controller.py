@@ -118,6 +118,22 @@ class SystemController:
                 ],
                 "args": [],
             },
+            "edge": {
+                "process_names": ["msedge.exe"],
+                "paths": [
+                    Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+                    Path(os.environ.get("PROGRAMFILES", "")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+                ],
+                "args": [],
+            },
+            "firefox": {
+                "process_names": ["firefox.exe"],
+                "paths": [
+                    Path(os.environ.get("PROGRAMFILES", "")) / "Mozilla Firefox" / "firefox.exe",
+                    Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Mozilla Firefox" / "firefox.exe",
+                ],
+                "args": [],
+            },
             "whatsapp": {
                 "process_names": ["whatsapp.exe", "WhatsApp.exe"],
                 "paths": [
@@ -143,12 +159,24 @@ class SystemController:
         }
 
         # Имя → Steam AppID
+        # Имя → Steam AppID
         self.steam_games: dict[str, str] = {
             "cs2": "730",
             "counter-strike 2": "730",
             "counter-strike": "730",
             "war thunder": "236390",
             "warthunder": "236390",
+            "poppy playtime": "1721470",
+            "poppy": "1721470",
+            "gta 5": "271590",
+            "gta v": "271590",
+            "gta5": "271590",
+            "dota 2": "570",
+            "dota": "570",
+            "pubg": "578080",
+            "rust": "252490",
+            "terraria": "105600",
+            "minecraft": "1672970",  # Minecraft Launcher в Steam, если есть
         }
 
     def is_process_running(self, process_names: list[str]) -> bool:
@@ -198,6 +226,16 @@ class SystemController:
 
     async def launch_app(self, name: str) -> LaunchResult:
         key = (name or "").strip().lower()
+        aliases = {
+            "edge": "edge",
+            "microsoft edge": "edge",
+            "msedge": "edge",
+            "firefox": "firefox",
+            "mozilla": "firefox",
+            "mozilla firefox": "firefox",
+        }
+        key = aliases.get(key, key)
+
         if key in ("whatsapp", "whats app", "вацап", "вотсап"):
             return await self.launch_whatsapp()
         cfg = self.apps.get(key)
@@ -254,6 +292,54 @@ class SystemController:
         await asyncio.to_thread(_run)
         return LaunchResult("started", str(app_id), f"Steam game {app_id}")
 
+    async def install_steam_game(self, name_or_id: str) -> LaunchResult:
+        """Скачать / установить игру через Steam (steam://install/<id>)."""
+        key = (name_or_id or "").strip().lower()
+        app_id = self.steam_games.get(key, key)
+
+        if not str(app_id).isdigit():
+            return LaunchResult(
+                "error",
+                name_or_id,
+                f"Unknown Steam game / id: {name_or_id}",
+            )
+
+        url = f"steam://install/{app_id}"
+
+        def _run() -> None:
+            os.startfile(url)
+
+        await asyncio.to_thread(_run)
+        return LaunchResult(
+            "started",
+            str(app_id),
+            f"Steam install requested for {app_id}",
+        )
+
+    async def uninstall_steam_game(self, name_or_id: str) -> LaunchResult:
+        """Удалить игру через Steam (steam://uninstall/<id>)."""
+        key = (name_or_id or "").strip().lower()
+        app_id = self.steam_games.get(key, key)
+
+        if not str(app_id).isdigit():
+            return LaunchResult(
+                "error",
+                name_or_id,
+                f"Unknown Steam game / id: {name_or_id}",
+            )
+
+        url = f"steam://uninstall/{app_id}"
+
+        def _run() -> None:
+            os.startfile(url)
+
+        await asyncio.to_thread(_run)
+        return LaunchResult(
+            "started",
+            str(app_id),
+            f"Steam uninstall requested for {app_id}",
+        )
+    
     async def launch_fortnite_epic(self) -> LaunchResult:
         """Fortnite через URI Epic (если лаунчер установлен)."""
         uri = "com.epicgames.launcher://apps/Fortnite?action=launch&silent=true"
@@ -386,5 +472,35 @@ class SystemController:
             r.target,
             f"Чат WhatsApp с {contact} открыт. Нажми кнопку звонка в приложении.",
         )
+
+    async def spotify_media(self, action: str) -> LaunchResult:
+        """
+        Media keys: play_pause | next | previous
+        Works with Spotify (and system media session) without API.
+        """
+        action = (action or "").strip().lower()
+        # Virtual-Key codes (Windows)
+        vk = {
+            "play_pause": 0xB3,  # VK_MEDIA_PLAY_PAUSE
+            "play": 0xB3,
+            "pause": 0xB3,
+            "next": 0xB0,        # VK_MEDIA_NEXT_TRACK
+            "previous": 0xB1,    # VK_MEDIA_PREV_TRACK
+            "prev": 0xB1,
+        }.get(action)
+
+        if vk is None:
+            return LaunchResult("error", action, f"Unknown media action: {action}")
+
+        def _run() -> None:
+            import ctypes
+            user32 = ctypes.windll.user32
+            # key down + key up
+            user32.keybd_event(vk, 0, 0, 0)
+            user32.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP = 2
+
+        await asyncio.to_thread(_run)
+        return LaunchResult("started", action, f"Spotify media: {action}")
+
 
 controller = SystemController()
