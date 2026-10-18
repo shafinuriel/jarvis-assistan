@@ -63,7 +63,7 @@ from actions.background_monitor import (
     add_monitor, remove_monitor, list_monitors, check_all as monitor_check_all,
 )
 from actions.web_search        import _news as _fetch_news_sync
-from memory.config_manager     import get_brief_enabled
+from memory.config_manager     import get_brief_enabled, get_feature_flag, get_modules_status
 
 from actions.phone_contorl import phone_action
 from actions.knowledge_action import knowledge_action
@@ -303,6 +303,19 @@ TOOL_DECLARATIONS = [
             "type": "OBJECT",
             "properties": {},
         }
+    },
+    {
+        "name": "get_modules_status",
+        "description": (
+            "Returns the enabled/disabled status of main Jarvis modules: "
+            "USB Security, Download Guard, Messenger, DND, draft replies, morning briefing. "
+            "Use when the user asks: module status, which modules are enabled, what is enabled, "
+            "статус модулей, какие модули включены, что включено."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
     },
     {
         "name": "weather_report",
@@ -1880,6 +1893,9 @@ class JarvisLive:
             elif name == "click_window":
                 title_part = args.get("title_part", "")
                 return click_center(title_part)
+            
+            elif name == "get_modules_status":
+                return get_modules_status()
             
             elif name == "shutdown_jarvis":
                 self.ui.write_log("SYS: Shutdown requested.")

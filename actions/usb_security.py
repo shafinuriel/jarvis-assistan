@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Callable, Awaitable, Optional
+from memory.config_manager import get_feature_flag
 
 try:
     import psutil
@@ -34,18 +35,31 @@ class Threat:
 
 
 def _load_config() -> dict:
+    # Базовые настройки по умолчанию
+    cfg = {
+        "enabled": True,
+        "sphere_alert": True,
+        "speak_clean": True,
+        "scan_depth": 2,
+        "poll_seconds": 2.5,
+        "max_files": 400,
+        "quarantine_dir": "memory/quarantine",
+    }
+    
+
+    # Сначала читаем старый файл (для детальных настроек)
     try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        if CONFIG_PATH.exists():
+            old = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            cfg.update(old)
     except Exception:
-        return {
-            "enabled": True,
-            "sphere_alert": True,
-            "speak_clean": True,
-            "scan_depth": 2,
-            "poll_seconds": 2.5,
-            "max_files": 400,
-            "quarantine_dir": "memory/quarantine",
-        }
+        pass
+
+    # Теперь перезаписываем главные флаги из нового единого конфига
+    cfg["enabled"] = get_feature_flag("usb_security_enabled", cfg.get("enabled", True))
+    cfg["sphere_alert"] = get_feature_flag("sphere_alert", cfg.get("sphere_alert", True))
+
+    return cfg
 
 
 def _sha256_file(path: Path, limit: int = 2_000_000) -> str:

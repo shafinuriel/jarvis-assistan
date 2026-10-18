@@ -1,0 +1,26 @@
+{
+  "assistant": {
+    "name": "JARVIS",
+    "user_name": "Nuriel",
+    "language": "ru"
+  },
+  "features": {
+    "morning_brief_enabled": true,
+    "face_lock_enabled": false,
+    "gesture_control_enabled": false,
+    "proactive_enabled": true
+  },
+  "security": {
+    "usb_security_enabled": true,
+    "download_guard_enabled": true,
+    "sphere_alert": true
+  },
+  "messenger": {
+    "enabled": true,
+    "dnd_enabled": false,
+    "draft_enabled": true
+  },
+  "performance": {
+    "profile": "balanced"
+  }
+}

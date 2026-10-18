@@ -27,3 +27,8 @@ win10toast; sys_platform == "win32"
 pywinauto; sys_platform == "win32"
 pywin32; sys_platform == "win32"
 qrcode[pil]
+telethon>=1.34.0
+firebase-admin>=6.5.0
+qrcode[pil]>=7.4
+Pillow>=10.0.0
+psutil>=5.9.0

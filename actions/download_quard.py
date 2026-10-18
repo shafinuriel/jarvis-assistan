@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from actions.usb_security import Threat, _sha256_file, do_quarantine, do_delete
+from memory.config_manager import get_feature_flag
 
 try:
     from watchdog.observers import Observer
@@ -24,23 +25,35 @@ CONFIG_PATH = BASE / "memory" / "download_guard.json"
 
 
 def _load_cfg() -> dict:
+    # Базовые настройки по умолчанию
+    cfg = {
+        "enabled": True,
+        "sphere_alert": True,
+        "speak_clean": False,
+        "watch_desktop": False,
+        "settle_seconds": 1.5,
+        "log_skips": False,
+        "flag_exe": False,
+        "flag_msi": False,
+        "high_risk_ext": [".bat", ".cmd", ".vbs", ".scr", ".js", ".jse", ".wsf", ".ps1"],
+        "suspicious_name_hints": [
+            "crack", "keygen", "patch", "loader", "payload", "worm", "stealer"
+        ],
+    }
+
+    # Сначала читаем старый файл (для детальных настроек)
     try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        if CONFIG_PATH.exists():
+            old = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            cfg.update(old)
     except Exception:
-        return {
-            "enabled": True,
-            "sphere_alert": True,
-            "speak_clean": False,
-            "watch_desktop": False,
-            "settle_seconds": 1.5,
-            "log_skips": False,
-            "flag_exe": False,
-            "flag_msi": False,
-            "high_risk_ext": [".bat", ".cmd", ".vbs", ".scr", ".js", ".jse", ".wsf", ".ps1"],
-            "suspicious_name_hints": [
-                "crack", "keygen", "patch", "loader", "payload", "worm", "stealer"
-            ],
-        }
+        pass
+
+    # Теперь перезаписываем главные флаги из нового единого конфига
+    cfg["enabled"] = get_feature_flag("download_guard_enabled", cfg.get("enabled", True))
+    cfg["sphere_alert"] = get_feature_flag("sphere_alert", cfg.get("sphere_alert", True))
+
+    return cfg
 
 
 def _downloads_dir() -> Path:

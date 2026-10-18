@@ -52,11 +52,13 @@ class MessengerAssistant:
 
     # ----- config -----
     def reload_config(self) -> None:
+        # 1. Сначала читаем старый конфиг (whitelist, тексты, api_id и т.д.)
         self.cfg = _load_json(
             CONFIG_PATH,
             {
                 "enabled": False,
                 "dnd_enabled": True,
+                "draft_enabled": True,
                 "reply_lang": "ru",
                 "reply_text_ru": "Привет, это Джарвис. Нуриэль сейчас занят, напишет потом.",
                 "reply_text_en": "Hi, this is Jarvis. Nuriel is busy right now and will write later.",
@@ -66,6 +68,13 @@ class MessengerAssistant:
                 "whatsapp": {"enabled": False},
             },
         )
+
+        # 2. Главные флаги берём из единого config.json
+        from memory.config_manager import get_feature_flag
+        self.cfg["enabled"] = get_feature_flag("messenger_enabled", self.cfg.get("enabled", True))
+        self.cfg["dnd_enabled"] = get_feature_flag("dnd_enabled", self.cfg.get("dnd_enabled", False))
+        self.cfg["draft_enabled"] = get_feature_flag("draft_enabled", self.cfg.get("draft_enabled", True))
+
         print(f"[MSG] config loaded (enabled={self.cfg.get('enabled')})")
 
     def _load_cooldown(self) -> None:

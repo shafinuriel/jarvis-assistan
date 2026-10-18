@@ -154,3 +154,8 @@ OFFLINE BRAIN (HARD RULE):
 - If internet is available → ALWAYS Gemini only. Never call offline_ask / Gemma.
 - If no internet (after checks) → offline_ask (local math + Gemma).
 - Do not use offline to "save tokens" or "speed up" when online.
+
+get_modules_status
+Description: Returns the current status (enabled/disabled) of the main Jarvis modules.
+Use when the user asks: "status", "module status", "which modules are enabled", "what is enabled", or "system status".
+Parameters: none required.
