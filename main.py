@@ -80,6 +80,8 @@ from actions.messenger_assistant import MessengerAssistant
 from modules.gods_eye.map_service import launch_tactical_map, close_tactical_map
 from actions.window_control import list_windows, focus_window, click_center, type_text
 from actions.offline_brain import ask as offline_ask, is_available as offline_available
+from actions.security_scanner import scanner
+from actions.gesture_control import GestureController
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -95,6 +97,8 @@ CHANNELS            = 1
 SEND_SAMPLE_RATE    = 16000
 RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE          = 1024
+# Глобальная ссылка на живой экземпляр JarvisLive
+_current_jarvis = None
 
 def _get_api_key() -> str:
     with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -1032,6 +1036,51 @@ TOOL_DECLARATIONS = [
             "required": ["title_part"]
         }
     },
+    {
+        "name": "quick_scan",
+        "description": "Быстрая проверка безопасности: Desktop, Downloads, Temp, Startup. Используй когда пользователь просит быстрый скан, проверить компьютер, поискать вирусы быстро.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "full_scan",
+        "description": "Полная проверка безопасности (глубже и дольше). Используй когда пользователь просит полный скан, глубокую проверку, тщательный поиск угроз.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+        {
+        "name": "clear_threat",
+        "description": "Сбросить режим угрозы (красная сфера). Вызывать когда пользователь сказал что угроза снята, всё чисто, игнорировать угрозу, отбой тревоги.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "enable_gestures",
+        "description": "Enable hand gesture control. Starts camera for MediaPipe hands. Use when user asks to enable gestures / gesture control.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "disable_gestures",
+        "description": "Disable hand gesture control and release camera. Use when user asks to turn off gestures.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
 ]
 
 # --- Plugin system ---
@@ -1077,6 +1126,15 @@ class JarvisLive:
         self.remote_server = JarvisRemoteServer(on_message=self._on_remote_message)
         self._note_queue = []
         self._briefing_done = False
+        self._threat_active = False
+        self.gesture = GestureController(on_gesture=self._on_gesture)
+        self._gesture_muted = False
+        global _current_jarvis
+        _current_jarvis = self
+        self.ui.jarvis = self
+
+        if get_feature_flag("gesture_control_enabled", False):
+            self.start_gestures()
             
     def _add_to_history(self, role: str, text: str):
         """Сохраняем реплики и ограничиваем размер буфера."""
@@ -1089,7 +1147,39 @@ class JarvisLive:
         # Показываем QR для подключения устройств экосистемы
         self.show_connection_qr()
         return None
+    
+    def _on_gesture(self, name: str):
+        print(f"[GESTURE] {name}")
+        # из потока MediaPipe → в asyncio/GUI безопасно
+        loop = getattr(self, "_loop", None)
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(self._handle_gesture, name)
+        else:
+            self._handle_gesture(name)
 
+    def _handle_gesture(self, name: str):
+        try:
+            if name == "open_palm":
+                if hasattr(self, "interrupt"):
+                    self.interrupt()
+                return
+
+            if name == "fist":
+                self._gesture_muted = not getattr(self, "_gesture_muted", False)
+                print(f"[GESTURE] gesture_muted={self._gesture_muted}")
+                return
+        except Exception as e:
+            print(f"[GESTURE] handle error: {e}")
+    
+    def start_gestures(self):
+        ok = self.gesture.start()
+        if ok:
+            print("[JARVIS] Gestures ON")
+        return ok
+
+    def stop_gestures(self):
+        self.gesture.stop()
+        print("[JARVIS] Gestures OFF")
     
     def _on_text_command(self, text: str):
         t = (text or "").strip().lower()
@@ -1200,7 +1290,10 @@ class JarvisLive:
         if value:
             self.ui.set_state("SPEAKING")
         elif not self.ui.muted:
-            self.ui.set_state("LISTENING")
+            if getattr(self, "_threat_active", False):
+                self.ui.set_state("THREAT")
+            else:
+                self.ui.set_state("LISTENING")
 
     def open_code_monitor(self):
         # Замени self.send_text_to_jarvis на то название функции,
@@ -1833,6 +1926,80 @@ class JarvisLive:
             elif name == "system_status":
                 r = await loop.run_in_executor(None, get_system_status)
                 result = str(r)
+                
+            elif name == "quick_scan":
+                result = await asyncio.to_thread(scanner.quick_scan)
+                if result.threats:
+                    self._threat_active = True
+                    self.ui.set_state("THREAT")
+                    panel_threats = []
+                    for t in result.threats:
+                        panel_threats.append({
+                            "path": getattr(t, "path", None) or str(t),
+                            "reason": getattr(t, "reason", None) or "suspicious",
+                        })
+                    print(f"[SCAN] show panel, threats={len(panel_threats)}")
+                    try:
+                        self.ui.show_security_panel("QUICK SCAN", panel_threats)
+                    except Exception as e:
+                        print(f"[SCAN] show_security_panel error: {e}")
+                    threats_text = "\n".join(
+                        [f"- {t.path}: {t.reason}" for t in result.threats[:10]]
+                    )
+                    return (
+                        f"Быстрая проверка завершена. Найдено угроз: {len(result.threats)}\n"
+                        f"{threats_text}"
+                    )
+                self._threat_active = False
+                return (
+                    f"Быстрая проверка завершена. Угроз не найдено. "
+                    f"Проверено файлов: {result.scanned_files}, время: {result.duration_sec} сек."
+                )
+
+            elif name == "full_scan":
+                result = await asyncio.to_thread(scanner.full_scan)
+                if result.threats:
+                    self._threat_active = True
+                    self.ui.set_state("THREAT")
+                    panel_threats = []
+                    for t in result.threats:
+                        panel_threats.append({
+                            "path": getattr(t, "path", None) or str(t),
+                            "reason": getattr(t, "reason", None) or "suspicious",
+                        })
+                    print(f"[SCAN] show panel, threats={len(panel_threats)}")
+                    try:
+                        self.ui.show_security_panel("FULL SCAN", panel_threats)
+                    except Exception as e:
+                        print(f"[SCAN] show_security_panel error: {e}")
+                    threats_text = "\n".join(
+                        [f"- {t.path}: {t.reason}" for t in result.threats[:15]]
+                    )
+                    return (
+                        f"Полная проверка завершена. Найдено угроз: {len(result.threats)}\n"
+                        f"{threats_text}"
+                    )
+                self._threat_active = False
+                return (
+                    f"Полная проверка завершена. Угроз не найдено. "
+                    f"Проверено файлов: {result.scanned_files}, время: {result.duration_sec} сек."
+                )
+            
+            elif name == "clear_threat":
+                self._threat_active = False
+                if not self.ui.muted:
+                    self.ui.set_state("LISTENING")
+                else:
+                    self.ui.set_state("IDLE")
+                return "Режим угрозы снят. Система в норме."
+            
+            elif name == "enable_gestures":
+                status = self.start_gestures()
+                return f"Gesture control: {status}"
+
+            elif name == "disable_gestures":
+                status = self.stop_gestures()
+                return f"Gesture control: {status}"
 
             elif name == "manage_monitor":
                 action = args.get("action", "").lower().strip()
@@ -1937,7 +2104,10 @@ class JarvisLive:
             self.speak_error(name, e)
 
         if not self.ui.muted:
-            self.ui.set_state("LISTENING")
+            if getattr(self, "_threat_active", False):
+                self.ui.set_state("THREAT")
+            else:
+                self.ui.set_state("LISTENING")
 
         print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
         return types.FunctionResponse(
@@ -2176,6 +2346,7 @@ class JarvisLive:
             if (
                 not jarvis_speaking
                 and not self.ui.muted
+                and not getattr(self, "_gesture_muted", False)
                 and not self._phone_active
                 and allow
             ):
@@ -2890,6 +3061,19 @@ def main():
     def runner():
         ui.wait_for_api_key()
         jarvis = JarvisLive(ui)
+
+        # Жёсткая связь UI ↔ Jarvis (для кнопки GESTURE CONTROL)
+        ui.jarvis = jarvis
+
+        # На случай, если шестерёнка живёт внутри другого объекта
+        for name in ("window", "main_window", "ui", "root", "main", "win"):
+            obj = getattr(ui, name, None)
+            if obj is not None:
+                try:
+                    obj.jarvis = jarvis
+                    print(f"[JARVIS] linked jarvis → ui.{name}")
+                except Exception:
+                    pass
         try:
             asyncio.run(jarvis.run())
         except KeyboardInterrupt:

@@ -21,7 +21,7 @@ else:
 
 from PyQt6.QtCore import (
     QEasingCurve, QMimeData, QObject, QPointF, QRectF, QSize, Qt,
-    QTimer, QUrl, pyqtSignal,
+    QTimer, QUrl, pyqtSignal, pyqtSlot,
 )
 from PyQt6.QtGui import (
     QBrush, QColor, QConicalGradient, QDragEnterEvent, QDropEvent, QFont,
@@ -1737,6 +1737,7 @@ class MainWindow(QMainWindow):
     _cam_stream_sig = pyqtSignal(bool)       # True=start live stream, False=stop
     _cam_frame_sig  = pyqtSignal(bytes)      # live camera frame → HUD area
     _clipboard_sig  = pyqtSignal(str)        # clipboard text changed (thread-safe)
+    security_panel_signal = pyqtSignal(str, list)
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -1874,8 +1875,8 @@ class MainWindow(QMainWindow):
         # Quick-access drawer (floating overlay, built after central widget layout is done)
         self._quick_drawer = self._build_quick_drawer()
         self._update_autostart_btn(self._check_autostart())
-        from memory.config_manager import get_brief_enabled as _gbe
-        self._update_brief_btn(_gbe())
+        from memory.config_manager import get_feature_flag
+        self._update_brief_btn(get_feature_flag("morning_brief_enabled", True))
 
         self._clock_tmr = QTimer(self)
         self._clock_tmr.timeout.connect(self._tick_clock)
@@ -1917,6 +1918,7 @@ class MainWindow(QMainWindow):
         sc_full.activated.connect(self._toggle_fullscreen)
         sc_intr = QShortcut(QKeySequence("Escape"), self)
         sc_intr.activated.connect(self._do_interrupt)
+        self.security_panel_signal.connect(self.show_security_panel)
     
     def _show_camera_frame(self, img_bytes: bytes):
         """Slot — display camera preview overlay (main thread)."""
@@ -2738,6 +2740,33 @@ class MainWindow(QMainWindow):
         self._brief_btn.clicked.connect(self._toggle_brief)
         lay.addWidget(self._brief_btn)
 
+        # --- MODULES ---
+        mod_hdr = QLabel("MODULES")
+        mod_hdr.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        mod_hdr.setStyleSheet(
+            f"color: {C.PRI_DIM}; background: transparent; "
+            f"border-bottom: 1px solid {C.BORDER}; padding-bottom: 4px; margin-top: 6px;"
+        )
+        lay.addWidget(mod_hdr)
+
+        self._flag_btns = {}
+        for flag, label in [
+            ("usb_security_enabled", "USB SECURITY"),
+            ("download_guard_enabled", "DOWNLOAD GUARD"),
+            ("messenger_enabled", "MESSENGER"),
+            ("dnd_enabled", "DND"),
+            ("draft_enabled", "DRAFT"),
+            ("gesture_control_enabled", "GESTURE CONTROL"),
+        ]:
+            btn = QPushButton()
+            btn.setFixedHeight(26)
+            btn.setFont(QFont("Courier New", 7))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked=False, f=flag: self._toggle_feature_flag(f))
+            lay.addWidget(btn)
+            self._flag_btns[flag] = btn
+            self._update_flag_btn(flag)
+
         w.adjustSize()
         return w
 
@@ -3180,11 +3209,71 @@ class MainWindow(QMainWindow):
             """)
 
     def _toggle_brief(self):
-        from memory.config_manager import get_brief_enabled, save_brief_enabled
-        new_val = not get_brief_enabled()
-        save_brief_enabled(new_val)
+        from memory.config_manager import get_feature_flag, set_feature_flag
+        new_val = not get_feature_flag("morning_brief_enabled", True)
+        set_feature_flag("morning_brief_enabled", new_val)
         self._update_brief_btn(new_val)
 
+    def _toggle_feature_flag(self, flag_name: str):
+        from memory.config_manager import get_feature_flag, set_feature_flag
+        new_val = not get_feature_flag(flag_name, False)
+        set_feature_flag(flag_name, new_val)
+        self._update_flag_btn(flag_name)
+
+        # Живое включение/выключение жестов
+        if flag_name == "gesture_control_enabled":
+            jarvis = getattr(self, "jarvis", None) or getattr(self, "_jarvis", None)
+
+            if jarvis is None:
+                import sys
+                main_mod = sys.modules.get("__main__")
+                jarvis = getattr(main_mod, "_current_jarvis", None) if main_mod else None
+
+            if jarvis is not None:
+                if new_val:
+                    if hasattr(jarvis, "start_gestures"):
+                        jarvis.start_gestures()
+                else:
+                    if hasattr(jarvis, "stop_gestures"):
+                        jarvis.stop_gestures()
+            
+
+    def _update_flag_btn(self, flag_name: str):
+        from memory.config_manager import get_feature_flag
+        if not hasattr(self, "_flag_btns") or flag_name not in self._flag_btns:
+            return
+        btn = self._flag_btns[flag_name]
+        labels = {
+            "usb_security_enabled": "USB SECURITY",
+            "download_guard_enabled": "DOWNLOAD GUARD",
+            "messenger_enabled": "MESSENGER",
+            "dnd_enabled": "DND",
+            "draft_enabled": "DRAFT",
+            "gesture_control_enabled": "GESTURE CONTROL",
+        }
+        name = labels.get(flag_name, flag_name)
+        enabled = get_feature_flag(flag_name, False)
+        if enabled:
+            btn.setText(f"● {name}: ON")
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: #001a00; color: {C.GREEN};
+                    border: 1px solid {C.GREEN}; border-radius: 3px;
+                    text-align: left; padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: #002010; }}
+            """)
+        else:
+            btn.setText(f"○ {name}: OFF")
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent; color: {C.TEXT_DIM};
+                    border: 1px solid {C.BORDER}; border-radius: 3px;
+                    text-align: left; padding: 0 8px;
+                }}
+                QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+            """)
+    
     def _update_brief_btn(self, enabled: bool):
         if not hasattr(self, '_brief_btn'):
             return
@@ -3348,6 +3437,19 @@ class MainWindow(QMainWindow):
             self._apply_state("LISTENING")
             self._log.append_log("SYS: Microphone active.")
 
+    
+    @pyqtSlot(bool)
+    def set_muted_from_gesture(self, muted: bool):
+        """Thread-safe mute from gesture (called via QueuedConnection)."""
+        self.muted = bool(muted)
+        if getattr(self, "hud", None) is not None:
+            self.hud.muted = self.muted
+        self._style_mute_btn()
+        if self.muted:
+            self._apply_state("MUTED")
+        else:
+            self._apply_state("LISTENING")
+    
     def _style_mute_btn(self):
         if self._muted:
             self._mute_btn.setText("🔇  MICROPHONE MUTED")
@@ -3387,8 +3489,14 @@ class MainWindow(QMainWindow):
         st = (state or getattr(self.hud, "state", "IDLE") or "IDLE").upper()
         
         if getattr(self.hud, "muted", False):
-            self.sphere.set_idle()
-            label, color = "● MUTED", "#668088"
+            try:
+                self.sphere.page().runJavaScript("setJarvisState('muted');")
+            except Exception:
+                try:
+                    self.sphere.set_idle()
+                except Exception:
+                    pass
+            label, color = "● MUTED", "#668888"
         elif st == "SPEAKING" or getattr(self.hud, "speaking", False):
             self.sphere.set_speaking()
             label, color = "● SPEAKING", "#00ccff"
@@ -3472,6 +3580,9 @@ class _RootShim:
 class JarvisUI:
     def open_code_monitor(self):
         self._win.open_code_monitor()
+        
+    def show_security_panel(self, drive: str, threats: list):
+        self._win.security_panel_signal.emit(drive, threats)
         
     def __init__(self, face_path: str, size=None):
         self._app = QApplication.instance() or QApplication(sys.argv)

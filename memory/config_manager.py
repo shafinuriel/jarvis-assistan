@@ -181,6 +181,30 @@ def get_feature_flag(flag_name: str, default: bool = False) -> bool:
 
     return default
 
+def set_feature_flag(flag_name: str, value: bool) -> None:
+    """
+    Универсальная запись флага.
+    Пишет в те же секции, что читает get_feature_flag.
+    """
+    value = bool(value)
+
+    if flag_name in ("usb_security_enabled", "download_guard_enabled", "sphere_alert"):
+        set_setting("security", flag_name, value)
+        return
+
+    if flag_name in ("morning_brief_enabled", "face_lock_enabled",
+                     "gesture_control_enabled", "proactive_enabled"):
+        set_setting("features", flag_name, value)
+        return
+
+    if flag_name in ("messenger_enabled", "dnd_enabled", "draft_enabled"):
+        key = "enabled" if flag_name == "messenger_enabled" else flag_name
+        set_setting("messenger", key, value)
+        return
+
+    # fallback: features
+    set_setting("features", flag_name, value)
+
 def get_modules_status() -> str:
     """Короткий отчёт о состоянии основных модулей."""
     flags = {

@@ -1,8 +1,8 @@
 {
   "assistant": {
     "name": "JARVIS",
-    "user_name": "Nuriel",
-    "language": "ru"
+    "user_name": "YourName",
+    "language": "en"
   },
   "features": {
     "morning_brief_enabled": true,
@@ -17,7 +17,7 @@
   },
   "messenger": {
     "enabled": true,
-    "dnd_enabled": false,
+    "dnd_enabled": true,
     "draft_enabled": true
   },
   "performance": {

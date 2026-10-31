@@ -169,7 +169,7 @@
   let vortex = 0, targetVortex = 0;
   let colorMix = 0;
 
-  window.setJarvisState = function (s) {
+  window.setJarvisState = function(s) {
     state = (s || "idle").toLowerCase();
     if (state === "listening") {
       targetRadius = 0.88; targetRotSpeed = 0.55; targetNoise = 0.06; targetVortex = 0.15; colorMix = 0.15;
@@ -178,8 +178,10 @@
     } else if (state === "thinking") {
       targetRadius = 1.0; targetRotSpeed = 0.9; targetNoise = 0.1; targetVortex = 1.0; colorMix = 0.35;
     } else if (state === "threat") {
-      // aggressive red alert
       targetRadius = 1.12; targetRotSpeed = 1.4; targetNoise = 0.28; targetVortex = 0.9; colorMix = 1.0;
+    } else if (state === "muted") {
+      // приглушённый: меньше, медленнее, холоднее
+      targetRadius = 0.75; targetRotSpeed = 0.12; targetNoise = 0.02; targetVortex = 0.0; colorMix = 0.0;
     } else {
       // idle
       targetRadius = 1.0; targetRotSpeed = 0.22; targetNoise = 0.04; targetVortex = 0.0; colorMix = 0.0;
