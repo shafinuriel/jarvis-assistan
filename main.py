@@ -82,6 +82,7 @@ from actions.window_control import list_windows, focus_window, click_center, typ
 from actions.offline_brain import ask as offline_ask, is_available as offline_available
 from actions.security_scanner import scanner
 from actions.gesture_control import GestureController
+from actions.face_lock import FaceLock
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -922,7 +923,7 @@ TOOL_DECLARATIONS = [
                     )
                 },
                 "key":   {"type": "STRING", "description": "Short snake_case key (e.g. name, favorite_food, sister_name)"},
-                "value": {"type": "STRING", "description": "Concise value in English (e.g. Fatih, pizza, older sister)"},
+                "value": {"type": "STRING", "description": "Concise value in English (e.g. Nuriel, pizza, older sister)"},
             },
             "required": ["category", "key", "value"]
         }
@@ -1081,6 +1082,51 @@ TOOL_DECLARATIONS = [
             "required": []
         }
     },
+    {
+        "name": "enable_face_lock",
+        "description": "Enable FaceLock. Starts camera and face recognition to lock the PC when the owner is away. Use when user asks to enable FaceLock / face lock / face recognition lock.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "disable_face_lock",
+        "description": "Disable FaceLock and release the camera. Use when user asks to turn off FaceLock / face lock.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "set_module",
+        "description": "Enable or disable a Jarvis module/feature. Use for sphere, DND, messenger, USB security, download guard, draft, morning brief, face lock, gesture control.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "module": {
+                    "type": "string",
+                    "description": "Module name: sphere, dnd, messenger, usb_security, download_guard, draft, morning_brief, face_lock, gesture_control"
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "description": "true to enable, false to disable"
+                }
+            },
+            "required": ["module", "enabled"]
+        }
+    },
+    {
+        "name": "set_owner_face",
+        "description": "Save the currently uploaded image as the owner face for FaceLock. Use when the user says: 'this is my face', 'set owner face', 'use this photo for face lock', 'поставь это фото для фейслока', 'это моё лицо', 'запомни моё лицо'.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
 ]
 
 # --- Plugin system ---
@@ -1129,12 +1175,17 @@ class JarvisLive:
         self._threat_active = False
         self.gesture = GestureController(on_gesture=self._on_gesture)
         self._gesture_muted = False
+        self.face_lock = FaceLock(jarvis=self)
         global _current_jarvis
         _current_jarvis = self
         self.ui.jarvis = self
 
         if get_feature_flag("gesture_control_enabled", False):
             self.start_gestures()
+            
+        if get_feature_flag("face_lock_enabled", False):
+            self.face_lock.start()
+        
             
     def _add_to_history(self, role: str, text: str):
         """Сохраняем реплики и ограничиваем размер буфера."""
@@ -1180,6 +1231,16 @@ class JarvisLive:
     def stop_gestures(self):
         self.gesture.stop()
         print("[JARVIS] Gestures OFF")
+        
+    def start_face_lock(self):
+        ok = self.face_lock.start()
+        if ok:
+            print("[JARVIS] FaceLock ON")
+        return ok
+
+    def stop_face_lock(self):
+        self.face_lock.stop()
+        print("[JARVIS] FaceLock OFF")
     
     def _on_text_command(self, text: str):
         t = (text or "").strip().lower()
@@ -1938,22 +1999,23 @@ class JarvisLive:
                             "path": getattr(t, "path", None) or str(t),
                             "reason": getattr(t, "reason", None) or "suspicious",
                         })
-                    print(f"[SCAN] show panel, threats={len(panel_threats)}")
                     try:
                         self.ui.show_security_panel("QUICK SCAN", panel_threats)
                     except Exception as e:
                         print(f"[SCAN] show_security_panel error: {e}")
+
                     threats_text = "\n".join(
                         [f"- {t.path}: {t.reason}" for t in result.threats[:10]]
                     )
                     return (
-                        f"Быстрая проверка завершена. Найдено угроз: {len(result.threats)}\n"
-                        f"{threats_text}"
+                        f"Быстрая проверка завершена. Найдено подозрительных файлов: {len(result.threats)}.\n"
+                        f"{threats_text}\n"
+                        f"Что делаем с ними, сэр? Могу отправить в карантин или проигнорировать."
                     )
                 self._threat_active = False
                 return (
-                    f"Быстрая проверка завершена. Угроз не найдено. "
-                    f"Проверено файлов: {result.scanned_files}, время: {result.duration_sec} сек."
+                    f"Быстрая проверка завершена. Угроз не обнаружено.\n"
+                    f"Проверено файлов: {result.scanned_files}, время: {result.duration_sec} сек. Система в норме."
                 )
 
             elif name == "full_scan":
@@ -1967,22 +2029,23 @@ class JarvisLive:
                             "path": getattr(t, "path", None) or str(t),
                             "reason": getattr(t, "reason", None) or "suspicious",
                         })
-                    print(f"[SCAN] show panel, threats={len(panel_threats)}")
                     try:
                         self.ui.show_security_panel("FULL SCAN", panel_threats)
                     except Exception as e:
                         print(f"[SCAN] show_security_panel error: {e}")
+
                     threats_text = "\n".join(
                         [f"- {t.path}: {t.reason}" for t in result.threats[:15]]
                     )
                     return (
-                        f"Полная проверка завершена. Найдено угроз: {len(result.threats)}\n"
-                        f"{threats_text}"
+                        f"Полная проверка завершена. Найдено подозрительных файлов: {len(result.threats)}.\n"
+                        f"{threats_text}\n"
+                        f"Рекомендую проверить эти файлы. Могу отправить их в карантин."
                     )
                 self._threat_active = False
                 return (
-                    f"Полная проверка завершена. Угроз не найдено. "
-                    f"Проверено файлов: {result.scanned_files}, время: {result.duration_sec} сек."
+                    f"Полная проверка завершена. Угроз не обнаружено.\n"
+                    f"Проверено файлов: {result.scanned_files}, время: {result.duration_sec} сек. Всё чисто."
                 )
             
             elif name == "clear_threat":
@@ -2000,7 +2063,89 @@ class JarvisLive:
             elif name == "disable_gestures":
                 status = self.stop_gestures()
                 return f"Gesture control: {status}"
+            
+            elif name == "enable_face_lock":
+                from memory.config_manager import set_feature_flag
+                set_feature_flag("face_lock_enabled", True)
+                status = self.start_face_lock()
+                return f"FaceLock: {'enabled' if status else 'failed to start'}"
+            
+            elif name == "disable_face_lock":
+                from memory.config_manager import set_feature_flag
+                set_feature_flag("face_lock_enabled", False)
+                self.stop_face_lock()
+                return "FaceLock: disabled"
 
+            elif name == "set_module":
+                from memory.config_manager import set_feature_flag, get_feature_flag
+
+                module = (args.get("module") or "").lower().strip()
+                enabled = args.get("enabled", False)
+
+                # Маппинг удобных названий на реальные флаги
+                flag_map = {
+                    "sphere": "sphere_enabled",
+                    "dnd": "dnd_enabled",
+                    "messenger": "messenger_enabled",
+                    "usb_security": "usb_security_enabled",
+                    "download_guard": "download_guard_enabled",
+                    "draft": "draft_enabled",
+                    "morning_brief": "morning_brief_enabled",
+                    "face_lock": "face_lock_enabled",
+                    "gesture_control": "gesture_control_enabled",
+                    "gestures": "gesture_control_enabled",
+                }
+
+                flag = flag_map.get(module)
+                if not flag:
+                    result = f"Unknown module: {module}. Available: sphere, dnd, messenger, usb_security, download_guard, draft, morning_brief, face_lock, gesture_control"
+                else:
+                    set_feature_flag(flag, bool(enabled))
+
+                    # Живое включение/выключение для модулей, которые это поддерживают
+                    if flag == "face_lock_enabled":
+                        if enabled:
+                            self.start_face_lock()
+                        else:
+                            self.stop_face_lock()
+                    elif flag == "gesture_control_enabled":
+                        if enabled:
+                            self.start_gestures()
+                        else:
+                            self.stop_gestures()
+
+                    status = "enabled" if enabled else "disabled"
+                    result = f"{module} {status}"
+            
+            elif name == "set_owner_face":
+                try:
+                    src = getattr(self.ui, "current_file", None)
+                    if not src:
+                        result = "No file uploaded. Please drop a photo first, then say 'this is my face'."
+                    else:
+                        from pathlib import Path
+                        import shutil
+
+                        src_path = Path(src)
+                        if not src_path.exists():
+                            result = "Uploaded file not found."
+                        elif src_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
+                            result = "This file is not an image. Please upload a photo (jpg/png)."
+                        else:
+                            dest = Path("memory") / "owner_face.jpg"
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                            # Convert/save as jpg if needed
+                            if src_path.suffix.lower() in {".jpg", ".jpeg"}:
+                                shutil.copy2(src_path, dest)
+                            else:
+                                from PIL import Image
+                                img = Image.open(src_path).convert("RGB")
+                                img.save(dest, "JPEG", quality=95)
+
+                            result = f"Owner face saved successfully as {dest}. FaceLock can now use this photo."
+                except Exception as e:
+                    result = f"Failed to set owner face: {e}"
+            
             elif name == "manage_monitor":
                 action = args.get("action", "").lower().strip()
                 topic  = args.get("topic", "").strip()
@@ -2079,6 +2224,17 @@ class JarvisLive:
                         try:
                             if getattr(self, "messenger", None):
                                 self.messenger.stop()
+                        except Exception:
+                            pass
+                        try:
+                            if getattr(self, "face_lock", None):
+                                self.stop_face_lock()
+                        except Exception:
+                            pass
+
+                        try:
+                            if getattr(self, "gesture", None):
+                                self.stop_gestures()
                         except Exception:
                             pass
                     await asyncio.sleep(1.5)

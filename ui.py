@@ -1790,12 +1790,26 @@ class MainWindow(QMainWindow):
         # Center column: HUD + resizable content panel via QSplitter
         self.hud = HudCanvas(face_path, _display)
         self.hud.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        _html = Path(__file__).resolve().parent / "sphere_ui.html"
-        self.sphere = SphereWidget(self, _html)
-        self.sphere.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        self.sphere.setMinimumSize(280, 280)
+        # --- 3D Sphere (optional & safe) ---
+        from memory.config_manager import get_feature_flag
+
+        self.sphere = None
+        sphere_enabled = get_feature_flag("sphere_enabled", True)
+        html_path = Path(__file__).resolve().parent / "sphere_ui.html"
+
+        if sphere_enabled and html_path.exists():
+            try:
+                self.sphere = SphereWidget(self, html_path)
+                self.sphere.setSizePolicy(
+                    QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+                )
+                self.sphere.setMinimumSize(280, 280)
+                print("[UI] 3D Sphere enabled")
+            except Exception as e:
+                print(f"[UI] Sphere failed to load: {e}")
+                self.sphere = None
+        else:
+            print("[UI] 3D Sphere disabled or file missing")
         self._content_panel = self._build_content_panel()
 
         # Live camera container — replaces HUD when camera stream is active
@@ -1832,14 +1846,21 @@ class MainWindow(QMainWindow):
         )
         _cam_v.addWidget(self._cam_live_lbl, stretch=1)
 
-        # Stack: 0 = animated HUD, 1 = live camera
+        # Stack: 0 = sphere or HUD, 1 = live camera
         self._hud_cam_stack = QStackedWidget()
-        self._hud_cam_stack.addWidget(self.sphere)
+
+        if self.sphere is not None:
+            self._hud_cam_stack.addWidget(self.sphere)
+            self.sphere.setStyleSheet("background: #0a1628;")
+        else:
+            # fallback — используем старый HudCanvas
+            self._hud_cam_stack.addWidget(self.hud)
+
         self._hud_cam_stack.addWidget(_cam_cont)
         self._hud_cam_stack.setStyleSheet("background: #0a1628;")
-        self.sphere.setStyleSheet("background: #0a1628;")
-        self.hud.hide()
 
+        if self.sphere is not None:
+            self.hud.hide()
         self._center_split = QSplitter(Qt.Orientation.Vertical)
         self._center_split.setStyleSheet(f"""
             QSplitter::handle {{
@@ -2757,6 +2778,8 @@ class MainWindow(QMainWindow):
             ("dnd_enabled", "DND"),
             ("draft_enabled", "DRAFT"),
             ("gesture_control_enabled", "GESTURE CONTROL"),
+            ("face_lock_enabled", "FACE LOCK"),
+            ("sphere_enabled", "3D SPHERE"),
         ]:
             btn = QPushButton()
             btn.setFixedHeight(26)
@@ -3052,7 +3075,7 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(_fl("[F4] Mute  ·  [F11] Fullscreen"))
         lay.addStretch()
-        lay.addWidget(_fl("By FatihMakes", C.PRI_DIM))
+        lay.addWidget(_fl("By Nuriel Shafi", C.PRI_DIM))
         return w
 
     def _on_file_selected(self, path: str):
@@ -3236,6 +3259,20 @@ class MainWindow(QMainWindow):
                 else:
                     if hasattr(jarvis, "stop_gestures"):
                         jarvis.stop_gestures()
+        
+        if flag_name == "face_lock_enabled":
+            jarvis = getattr(self, "jarvis", None) or getattr(self, "_jarvis", None)
+            if jarvis is None:
+                import sys
+                main_mod = sys.modules.get("__main__")
+                jarvis = getattr(main_mod, "_current_jarvis", None) if main_mod else None
+            if jarvis is not None:
+                if new_val:
+                    if hasattr(jarvis, "start_face_lock"):
+                        jarvis.start_face_lock()
+                else:
+                    if hasattr(jarvis, "stop_face_lock"):
+                        jarvis.stop_face_lock()
             
 
     def _update_flag_btn(self, flag_name: str):
@@ -3250,6 +3287,8 @@ class MainWindow(QMainWindow):
             "dnd_enabled": "DND",
             "draft_enabled": "DRAFT",
             "gesture_control_enabled": "GESTURE CONTROL",
+            "face_lock_enabled": "FACE LOCK",
+            "sphere_enabled": "3D SPHERE",
         }
         name = labels.get(flag_name, flag_name)
         enabled = get_feature_flag(flag_name, False)
@@ -3483,7 +3522,7 @@ class MainWindow(QMainWindow):
         self._sync_sphere_state(state)
         
     def _sync_sphere_state(self, state: str = "") -> None:
-        if not hasattr(self, "sphere"):
+        if self.sphere is None:
             return
         
         st = (state or getattr(self.hud, "state", "IDLE") or "IDLE").upper()

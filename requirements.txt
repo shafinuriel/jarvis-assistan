@@ -10,7 +10,6 @@ playwright
 pyautogui
 pyperclip
 pygetwindow
-opencv-python
 numpy
 mss
 psutil
@@ -33,3 +32,6 @@ qrcode[pil]>=7.4
 Pillow>=10.0.0
 psutil>=5.9.0
 mediapipe>=0.10.14
+chromadb
+PyQt6-WebEngine
+opencv-contrib-python>=4.8.0

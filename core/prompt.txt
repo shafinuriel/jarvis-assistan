@@ -160,14 +160,15 @@ Description: Returns the current status (enabled/disabled) of the main Jarvis mo
 Use when the user asks: "status", "module status", "which modules are enabled", "what is enabled", or "system status".
 Parameters: none required.
 
-### Security Scanner
-- quick_scan — fast check (Desktop, Downloads, Temp, Startup). Call on: "quick scan", "scan my PC", "any viruses?", "check computer fast".
-- full_scan — deep full system scan. Call on: "full scan", "deep scan", "thorough system check".
-- clear_threat — reset threat mode (red sphere). Call on: "threat cleared", "all clear", "ignore threat", "cancel alert", "we're safe".
+### Security Scanner (3 levels)
+
+- quick_scan — Fast check of Desktop, Downloads, Temp and Startup folders. Use when user says: "quick scan", "быстрая проверка", "проверь компьютер быстро", "есть вирусы?".
+- full_scan — Deep scan (includes Documents, Pictures, Videos, Music + higher depth). Use when user says: "full scan", "полная проверка", "глубокая проверка", "тщательно проверь".
+- clear_threat — Reset threat mode (red sphere). Use when user says the threat is gone, "всё чисто", "игнорировать", "отбой", "we're safe".
 
 Rules:
 - NEVER delete files yourself. Only report results.
-- If threats found — clearly list paths and reasons.
+- If threats found — clearly list paths and reasons, then ask what to do.
 - If no threats — say how many files were checked and that the system is clean.
 - After reporting threats, wait for user decision. Use clear_threat only when the user explicitly dismisses the alert.
 
@@ -177,3 +178,23 @@ Gestures when enabled:
   open palm = interrupt / stop speaking
   fist = mute toggle (if available)
 Only enable when user explicitly asks. Default is OFF.
+
+TOOL: set_module
+- Enable or disable Jarvis modules by voice.
+- Use when the user wants to turn modules on or off (sphere, DND, messenger, USB security, download guard, draft, morning brief, face lock, gesture control).
+- Parameters:
+  - module: sphere | dnd | messenger | usb_security | download_guard | draft | morning_brief | face_lock | gesture_control
+  - enabled: true / false
+- Examples:
+  - "Enable sphere" / "Включи сферу" → set_module(module="sphere", enabled=true)
+  - "Disable DND" / "Выключи DND" → set_module(module="dnd", enabled=false)
+  - "Turn on face lock" / "Включи face lock" → set_module(module="face_lock", enabled=true)
+  - "Turn off gestures" / "Выключи жесты" → set_module(module="gesture_control", enabled=false)
+
+Event level (real-time):
+- Already active through Download Guard and USB Security modules.
+- When a new file appears in Downloads or a USB is connected, these modules automatically check it and can raise a threat.
+- User can enable/disable them with set_module (download_guard / usb_security).
+
+- set_owner_face: Save the currently uploaded image as the owner face. 
+  Use when user uploads a photo and says "this is my face", "set owner face", "use this for FaceLock", "это моё лицо", "запомни моё лицо".

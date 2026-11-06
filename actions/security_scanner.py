@@ -75,11 +75,24 @@ class SecurityScanner:
         return self._scan_paths(paths, level="quick", max_depth=2)
 
     def full_scan(self, extra_paths: Optional[List[str]] = None) -> ScanResult:
-        """Полный скан + дополнительные пути."""
+        """Полный скан: ключевые папки + Documents + Pictures + Videos + Music, глубина выше."""
         paths = self._get_quick_paths()
+
+        home = Path.home()
+        extra = [
+            str(home / "Documents"),
+            str(home / "Pictures"),
+            str(home / "Videos"),
+            str(home / "Music"),
+        ]
+        for p in extra:
+            if os.path.isdir(p) and p not in paths:
+                paths.append(p)
+
         if extra_paths:
             paths.extend(extra_paths)
-        return self._scan_paths(paths, level="full", max_depth=4)
+
+        return self._scan_paths(paths, level="full", max_depth=5)
 
     # ------------------------------------------------------------------
     # Внутренняя логика

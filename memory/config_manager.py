@@ -148,7 +148,8 @@ def get_feature_flag(flag_name: str, default: bool = False) -> bool:
             return bool(value)
 
     if flag_name in ("morning_brief_enabled", "face_lock_enabled",
-                     "gesture_control_enabled", "proactive_enabled"):
+                     "gesture_control_enabled", "proactive_enabled",
+                     "sphere_enabled"):
         value = get_setting("features", flag_name, None)
         if value is not None:
             return bool(value)
@@ -193,7 +194,8 @@ def set_feature_flag(flag_name: str, value: bool) -> None:
         return
 
     if flag_name in ("morning_brief_enabled", "face_lock_enabled",
-                     "gesture_control_enabled", "proactive_enabled"):
+                     "gesture_control_enabled", "proactive_enabled",
+                     "sphere_enabled"):
         set_setting("features", flag_name, value)
         return
 

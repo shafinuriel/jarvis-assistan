@@ -8,7 +8,8 @@
     "morning_brief_enabled": true,
     "face_lock_enabled": false,
     "gesture_control_enabled": false,
-    "proactive_enabled": true
+    "proactive_enabled": true,
+    "sphere_enabled": true
   },
   "security": {
     "usb_security_enabled": true,
@@ -17,7 +18,7 @@
   },
   "messenger": {
     "enabled": true,
-    "dnd_enabled": true,
+    "dnd_enabled": false,
     "draft_enabled": true
   },
   "performance": {

@@ -1,9 +1,9 @@
-# 🤖 J.A.R.V.I.S. (v2.5)
+# J.A.R.V.I.S. (v3.0)
 
 **It's all easy with Jarvis.**
 
 A real-time voice AI that can hear, see, understand, and control your computer — on any OS.  
-Supports Windows, macOS, and Linux. Built on the Gemini Live API for native audio streaming, delivering zero subscriptions and total digital autonomy.
+Supports Windows, macOS, and Linux. Built on the Gemini Live API for native audio streaming.
 
 ---
 
@@ -17,13 +17,13 @@ It’s not just an assistant — it’s an extension of your digital life.
 
 ---
 
-## ✨ What's New in v2.5 (October 2026)
+## What's New in v3.0
 
-- **Visual Feedback 2.0** — Fully polished 3D particle sphere with distinct states: idle, listening, speaking, thinking, threat, muted.
-- **Gesture Control** — MediaPipe-based hand tracking. Open palm = interrupt, fist = mute/unmute. Fully integrated into the HUD.
-- **Security Scanner** — Unified threat detection for USB drives and Downloads folder with visual + voice alerts and action buttons (Quarantine / Delete / Ignore).
-- **Clean Config System** — Personal settings moved to `config/config.json` (gitignored). Public `config.example.json` provided.
-- **Improved Stability** — Better state synchronization between voice, sphere, and security panels.
+- **FaceLock** — Camera-based PC lock. Recognizes only the owner's face. Easy setup: just drop a photo and say "this is my face".
+- **set_owner_face** — Simple way to set your face photo without touching any files.
+- **Voice Module Control** — Enable/disable FaceLock, gestures, sphere, DND, USB Security, Download Guard and more by voice.
+- **Improved 3-level Security Scanner** — Quick / Full / Event-driven scans with visual buttons (Quarantine / Delete / Ignore).
+- **Better Stability** — Safer imports, optional modules, cleaner config system.
 
 ---
 
@@ -45,6 +45,9 @@ It’s not just an assistant — it’s an extension of your digital life.
 | 🖐️ Gesture Control | Open palm / fist control for interrupt and mute |
 | 📝 Proactive Notes | Notes from phone appear on PC even without active connection |
 | 💬 Messenger Assistant | Smart DND + auto-responder for Telegram with family whitelist |
+| 🔒 FaceLock | Camera face recognition lock. Only owner face unlocks the PC |
+| 📸 set_owner_face | Drop photo → say "this is my face" → done |
+| 🎛 Voice Module Control | Turn any feature on/off by voice |
 
 ---
 
